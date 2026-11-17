@@ -1,5 +1,5 @@
 // Easy Announce Card (Ltek) — Home Assistant Dashboard card for Alexa announcements
-// Version: v2026.11.17.1
+// Version: v2026.11.17.2
 //
 // Type a message (or tap a preset), pick the speakers, press Send. One call reaches every
 // selected speaker:
@@ -15,6 +15,13 @@
 // API (input_select/list + input_select/update), keeping any "---" / "Select..." placeholder.
 // YAML input_selects are read-only.
 //
+// Volume: each speaker tile can show a volume slider, a mute button and a power button (each
+// optional, and only where the speaker supports it). An announcement volume, when switched on,
+// sets every target to that level just before announcing; with restore_volume the card puts each
+// one back to the level it had before, once the announcement should be over (restore_after
+// seconds, or an estimate from the message length). The restore timers live at module level, so
+// they survive the dashboard redrawing the card, but not closing the page.
+//
 // View state (typed message, selected speakers) lives in a module-level store keyed by the
 // card's presets entity, so a card element the dashboard editor recreates renders the
 // same view at once. The selection can also be remembered in the browser (remember_selection).
@@ -23,7 +30,7 @@
 // interpolated into it); per-card values are custom properties set inline on the card root.
 // The card renders once and patches itself on every state change.
 
-const BUILD_NUMBER = 'v2026.11.17.1';
+const BUILD_NUMBER = 'v2026.11.17.2';
 const VERSION = BUILD_NUMBER.slice(1);
 const CARD_TAG = 'easy-announce-card';
 const EDITOR_TAG = 'easy-announce-card-editor';
@@ -33,6 +40,10 @@ const ALEXA_PLATFORM = 'alexa_media';
 // input_select options that are there to say "nothing picked", never presets.
 const PLACEHOLDERS = new Set(['', '---', '--', '-', 'select...', 'select…', 'select', 'none', 'unknown']);
 const UNAVAILABLE = new Set(['unavailable', 'unknown']);
+// media_player supported_features bits (MediaPlayerEntityFeature)
+const FEAT = { VOLUME_SET: 4, VOLUME_MUTE: 8, TURN_ON: 128, TURN_OFF: 256 };
+// Pause after setting the announcement volume, so the speaker has it before the announcement starts.
+const VOLUME_SETTLE_MS = 500;
 
 // ---------------------------------------------------------------------------
 // Config
@@ -55,6 +66,13 @@ const DEFAULTS = {
   show_state: true,
   show_select_all: true,
   remember_selection: true,
+  show_volume: true,
+  show_mute: true,
+  show_power: false,
+  show_announce_volume: true,
+  announce_volume: 0,
+  restore_volume: true,
+  restore_after: 0,
   font_size_title: 14,
   font_size_name: 13,
   font_size_message: 14,
@@ -158,17 +176,68 @@ function discoverSpeakers(hass, c) {
     if (excluded(c.exclude, id, name, platform)) continue;
     const available = !UNAVAILABLE.has(st.state);
     if (!available && hideUnavail) continue;
-    out.set(id, { id, name: cleanName(name, c.strip_words), available });
+    out.set(id, { id, name: cleanName(name, c.strip_words), available, features: features(st) });
   }
   for (const id of include) {
     const st = hass.states[id];
     if (!st) continue;
     const available = !UNAVAILABLE.has(st.state);
     if (!available && hideUnavail) continue;
-    out.set(id, { id, name: cleanName(friendly(st, id), c.strip_words), available });
+    out.set(id, { id, name: cleanName(friendly(st, id), c.strip_words), available, features: features(st) });
   }
   return [...out.values()].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
 }
+
+function features(st) { return Number((st && st.attributes && st.attributes.supported_features) || 0); }
+const can = (s, bit) => (s.features & bit) === bit;
+
+/** Which controls a speaker's tile shows: { volume, mute, power }, by option and by what it supports. */
+function tileControls(c, s) {
+  if (!s.available) return { volume: false, mute: false, power: false };
+  return {
+    volume: !!cfg(c, 'show_volume') && can(s, FEAT.VOLUME_SET),
+    mute: !!cfg(c, 'show_mute') && can(s, FEAT.VOLUME_MUTE),
+    power: !!cfg(c, 'show_power') && (can(s, FEAT.TURN_ON) || can(s, FEAT.TURN_OFF)),
+  };
+}
+
+/** How long to wait before restoring the volume, in ms: the set time, or chime + ~14 characters a second. */
+function restoreDelayMs(c, message) {
+  const s = Number(cfg(c, 'restore_after'));
+  if (s > 0) return s * 1000;
+  return 4000 + String(message || '').length * 75;
+}
+
+// Speakers waiting to get their volume back: entity → { level, timer }. Module level, so a card
+// element the dashboard replaces doesn't lose them; a later announcement keeps the first level.
+const RESTORES = new Map();
+let LAST_HASS = null;
+
+/** The level to restore for each target: the pending one if a restore is already waiting, else now. */
+function restoreLevels(hass, targets) {
+  const out = {};
+  for (const id of targets) {
+    const pending = RESTORES.get(id);
+    if (pending) { out[id] = pending.level; continue; }
+    const lv = hass.states[id] && hass.states[id].attributes && hass.states[id].attributes.volume_level;
+    if (typeof lv === 'number') out[id] = lv;
+  }
+  return out;
+}
+
+function scheduleRestore(levels, delayMs) {
+  for (const [id, level] of Object.entries(levels)) {
+    const pending = RESTORES.get(id);
+    if (pending) clearTimeout(pending.timer);
+    const timer = setTimeout(() => {
+      RESTORES.delete(id);
+      if (LAST_HASS) LAST_HASS.callService('media_player', 'volume_set', { entity_id: id, volume_level: level }).catch(() => {});
+    }, delayMs);
+    RESTORES.set(id, { level, timer });
+  }
+}
+
+const speakerSig = (list) => list.map((s) => `${s.id}|${s.name}|${s.available}|${s.features}`).join(',');
 
 /** Short state line for a speaker tile. */
 function speakerState(st) {
@@ -248,7 +317,11 @@ function viewFor(c) {
   let v = VIEWS.get(key);
   if (!v) {
     const saved = cfg(c, 'remember_selection') ? storageGet(`sel:${key}`) : null;
-    v = { key, message: '', selected: new Set(Array.isArray(saved) ? saved : []), managing: false, status: null, busy: false };
+    const start = Number(cfg(c, 'announce_volume'));
+    const avol = cfg(c, 'remember_selection') ? storageGet(`avol:${key}`) : null;
+    v = { key, message: '', selected: new Set(Array.isArray(saved) ? saved : []), managing: false, status: null, busy: false,
+      avolOn: avol && typeof avol.on === 'boolean' ? avol.on : start > 0,
+      avol: avol && Number(avol.level) > 0 ? Number(avol.level) : (start > 0 ? start : 40) };
     VIEWS.set(key, v);
   }
   return v;
@@ -302,12 +375,28 @@ const CARD_CSS = `
   .link:disabled { color: var(--disabled-text-color, var(--secondary-text-color)); cursor: default; }
 
   .grid { display: grid; grid-template-columns: var(--ean-cols); gap: 8px; }
-  .tile { position: relative; display: flex; align-items: center; gap: 10px; min-width: 0; padding: 8px 10px; border-radius: 12px; cursor: pointer;
+  .tile { position: relative; display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 8px 10px; border-radius: 12px; cursor: pointer;
     border: 1px solid var(--divider-color); background: none; color: var(--primary-text-color); font-family: inherit; text-align: left;
     transition: border-color .15s ease, background-color .15s ease; }
   .tile:hover { border-color: color-mix(in srgb, var(--ean-c-selected) 60%, var(--divider-color)); }
   .tile.on { border-color: var(--ean-c-selected); background: color-mix(in srgb, var(--ean-c-selected) 15%, transparent); }
   .tile.off { opacity: .45; cursor: default; }
+  .tile:focus-visible { outline: 2px solid var(--ean-c-selected); outline-offset: 1px; }
+  .tile-top { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .ctl { display: flex; align-items: center; gap: 6px; min-width: 0; cursor: default; }
+  .ctl-btn { flex: none; border: none; background: none; padding: 0; margin: 0; cursor: pointer; line-height: 0; color: var(--secondary-text-color); }
+  .ctl-btn ha-icon { --mdc-icon-size: 18px; width: 18px; height: 18px; }
+  .ctl-btn:hover { color: var(--primary-text-color); }
+  .ctl-btn.on { color: var(--ean-c-selected); }
+  .ctl-btn.muted { color: var(--warning-color, #f4b942); }
+  input.vol { flex: 1 1 auto; min-width: 0; width: 100%; margin: 0; accent-color: var(--ean-c-selected); cursor: pointer; }
+  .avol { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--secondary-text-color); }
+  .avol label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; }
+  .avol input[type="checkbox"] { margin: 0; accent-color: var(--ean-c-send); }
+  .avol input[type="range"] { flex: 1 1 auto; min-width: 0; margin: 0; accent-color: var(--ean-c-send); cursor: pointer; }
+  .avol input[type="range"]:disabled { opacity: .4; cursor: default; }
+  .avol .avol-val { flex: none; min-width: 36px; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--primary-text-color); }
+  .avol.off .avol-val { color: var(--secondary-text-color); font-weight: 500; }
   .tile.flash { border-color: var(--success-color, #43a047); background: color-mix(in srgb, var(--success-color, #43a047) 18%, transparent); }
   .tile ha-icon.spk-icon { flex: none; --mdc-icon-size: var(--ean-icon); width: var(--ean-icon); height: var(--ean-icon); color: var(--ean-c-icon); }
   .tile.on ha-icon.spk-icon { color: var(--ean-c-selected); }
@@ -365,6 +454,7 @@ class EasyAnnounceCard extends HTMLElement {
   set hass(hass) {
     const first = !this._hass;
     this._hass = hass;
+    LAST_HASS = hass;
     if (first || !this._rendered) { this._render(); return; }
     if (this._throttle) return;
     this._throttle = setTimeout(() => { this._throttle = null; this._update(); }, 250);
@@ -424,6 +514,10 @@ class EasyAnnounceCard extends HTMLElement {
           ${this._canEditPresets() ? '<button class="icon-btn" data-save-preset title="Save as a preset"><ha-icon icon="mdi:bookmark-plus-outline"></ha-icon></button>' : ''}
           <button class="send" data-send><ha-icon icon="mdi:bullhorn-outline"></ha-icon>Send</button>
         </div>` : ''}
+        ${this._c('show_announce_volume') ? `<div class="avol" data-avol-row>
+          <label title="Set every speaker to this volume for the announcement"><input type="checkbox" data-avol-on${v.avolOn ? ' checked' : ''}>Announce at</label>
+          <input type="range" data-avol min="5" max="100" step="5" value="${v.avol}" aria-label="Announcement volume"${v.avolOn ? '' : ' disabled'}>
+          <span class="avol-val" data-avol-val></span></div>` : ''}
         <div class="spk-head"><span>Speakers</span><span class="count" data-count></span>${this._c('show_select_all')
     ? '<button class="link" data-all>All</button><button class="link" data-none>None</button>' : ''}</div>
         <div class="grid" data-grid>${this._gridHtml()}</div>
@@ -469,13 +563,73 @@ class EasyAnnounceCard extends HTMLElement {
         : 'No media players found.'}</div>`;
     }
     const showState = this._c('show_state');
-    return this._speakers.map((s) => `<button class="tile" data-spk="${esc(s.id)}" title="${esc(s.id)}">
-        <ha-icon class="spk-icon" icon="mdi:speaker"></ha-icon>
-        <span class="txt"><span class="name">${esc(s.name)}</span>${showState ? '<span class="state" data-state></span>' : ''}</span>
-        <span class="check"><ha-icon icon="mdi:check-circle"></ha-icon></span></button>`).join('');
+    return this._speakers.map((s) => {
+      const k = tileControls(this._config, s);
+      const id = esc(s.id);
+      const ctl = k.volume || k.mute || k.power ? `<div class="ctl" data-ctl>
+          ${k.power ? `<button class="ctl-btn" data-power="${id}" title="Power"><ha-icon icon="mdi:power"></ha-icon></button>` : ''}
+          ${k.mute ? `<button class="ctl-btn" data-mute="${id}" title="Mute"><ha-icon icon="mdi:volume-high"></ha-icon></button>` : ''}
+          ${k.volume ? `<input type="range" class="vol" data-vol="${id}" min="0" max="100" step="1" aria-label="Volume">` : ''}</div>` : '';
+      return `<div class="tile" role="button" tabindex="${s.available ? 0 : -1}" data-spk="${id}" title="${id}">
+        <div class="tile-top"><ha-icon class="spk-icon" icon="mdi:speaker"></ha-icon>
+        <span class="txt"><span class="name">${esc(s.name)}</span>${showState ? '<span class="state" data-state></span>' : ''}</span></div>
+        <span class="check"><ha-icon icon="mdi:check-circle"></ha-icon></span>${ctl}</div>`;
+    }).join('');
   }
 
-  _speakerSig() { return this._speakers.map((s) => `${s.id}|${s.name}|${s.available}`).join(','); }
+  _speakerSig() { return speakerSig(this._speakers); }
+
+  /** Tap / Enter on a tile, and its volume, mute and power controls (which never select the tile). */
+  _wireTiles(scope) {
+    scope.querySelectorAll('[data-spk]').forEach((el) => {
+      el.addEventListener('click', (e) => { if (!e.target.closest('[data-ctl]')) this._tapSpeaker(el.dataset.spk); });
+      el.addEventListener('keydown', (e) => {
+        if ((e.key === 'Enter' || e.key === ' ') && e.target === el) { e.preventDefault(); this._tapSpeaker(el.dataset.spk); }
+      });
+    });
+    scope.querySelectorAll('[data-vol]').forEach((el) => {
+      el.addEventListener('pointerdown', () => { el._dragging = true; });
+      el.addEventListener('input', () => { el._dragging = true; });
+      el.addEventListener('change', () => {
+        el._dragging = false;
+        this._hass.callService('media_player', 'volume_set', { entity_id: el.dataset.vol, volume_level: Number(el.value) / 100 })
+          .catch((e) => this._setStatus('err', `Volume not set: ${errText(e)}`));
+      });
+    });
+    scope.querySelectorAll('[data-mute]').forEach((b) => b.addEventListener('click', () => {
+      const st = this._hass.states[b.dataset.mute];
+      const muted = !!(st && st.attributes && st.attributes.is_volume_muted);
+      this._hass.callService('media_player', 'volume_mute', { entity_id: b.dataset.mute, is_volume_muted: !muted })
+        .catch((e) => this._setStatus('err', `Mute failed: ${errText(e)}`));
+    }));
+    scope.querySelectorAll('[data-power]').forEach((b) => b.addEventListener('click', () => {
+      const st = this._hass.states[b.dataset.power];
+      const off = !st || st.state === 'off' || st.state === 'standby';
+      this._hass.callService('media_player', off ? 'turn_on' : 'turn_off', { entity_id: b.dataset.power })
+        .catch((e) => this._setStatus('err', `Power failed: ${errText(e)}`));
+    }));
+  }
+
+  _persistAvol() {
+    if (this._c('remember_selection')) storageSet(`avol:${this._view.key}`, { on: this._view.avolOn, level: this._view.avol });
+  }
+
+  _patchAvol() {
+    const row = this.shadowRoot.querySelector('[data-avol-row]');
+    if (!row) return;
+    const v = this._view;
+    row.classList.toggle('off', !v.avolOn);
+    const r = row.querySelector('[data-avol]');
+    if (r) r.disabled = !v.avolOn;
+    const out = row.querySelector('[data-avol-val]');
+    if (out) out.textContent = v.avolOn ? `${v.avol}%` : 'as is';
+  }
+
+  /** The announcement volume (0..1), or null to leave every speaker as it is. */
+  _announceLevel() {
+    if (!this._c('show_announce_volume') || !this._view.avolOn) return null;
+    return Math.max(0, Math.min(100, Number(this._view.avol) || 0)) / 100;
+  }
 
   _wire() {
     const root = this.shadowRoot;
@@ -492,7 +646,10 @@ class EasyAnnounceCard extends HTMLElement {
       this._persistSelection(); this._patch();
     });
     on('[data-none]', 'click', () => { this._view.selected.clear(); this._persistSelection(); this._patch(); });
-    on('[data-spk]', 'click', (el) => this._tapSpeaker(el.dataset.spk));
+    this._wireTiles(root);
+    on('[data-avol-on]', 'change', (el) => { this._view.avolOn = el.checked; this._persistAvol(); this._patchAvol(); });
+    on('[data-avol]', 'input', (el) => { this._view.avol = Number(el.value); this._patchAvol(); });
+    on('[data-avol]', 'change', (el) => { this._view.avol = Number(el.value); this._persistAvol(); this._patchAvol(); });
     this._wirePresets();
   }
 
@@ -540,14 +697,14 @@ class EasyAnnounceCard extends HTMLElement {
   _update() {
     if (!this._hass) return;
     const next = discoverSpeakers(this._hass, this._config);
-    const sig = next.map((s) => `${s.id}|${s.name}|${s.available}`).join(',');
+    const sig = speakerSig(next);
     if (sig !== this._spkSig) {
       this._speakers = next;
       this._spkSig = sig;
       const grid = this.shadowRoot.querySelector('[data-grid]');
       if (grid) {
         grid.innerHTML = this._gridHtml();
-        grid.querySelectorAll('[data-spk]').forEach((el) => el.addEventListener('click', () => this._tapSpeaker(el.dataset.spk)));
+        this._wireTiles(grid);
       }
     }
     const p = readPresets(this._hass, this._config);
@@ -575,7 +732,26 @@ class EasyAnnounceCard extends HTMLElement {
       if (icon) { const ic = speakerIcon(st); if (icon.getAttribute('icon') !== ic) icon.setAttribute('icon', ic); }
       const stEl = el.querySelector('[data-state]');
       if (stEl) { const t = speakerState(st); if (stEl.textContent !== t) stEl.textContent = t; }
+      const a = (st && st.attributes) || {};
+      const vol = el.querySelector('[data-vol]');
+      // Never move a slider under the user's finger.
+      if (vol && !vol._dragging && this.shadowRoot.activeElement !== vol) {
+        const pct = typeof a.volume_level === 'number' ? String(Math.round(a.volume_level * 100)) : '0';
+        if (vol.value !== pct) vol.value = pct;
+        vol.title = typeof a.volume_level === 'number' ? `Volume ${pct}%` : 'Volume';
+      }
+      const mute = el.querySelector('[data-mute]');
+      if (mute) {
+        const m = !!a.is_volume_muted;
+        mute.classList.toggle('muted', m);
+        const ic = m ? 'mdi:volume-off' : 'mdi:volume-high';
+        if (mute.querySelector('ha-icon').getAttribute('icon') !== ic) mute.querySelector('ha-icon').setAttribute('icon', ic);
+        mute.title = m ? 'Unmute' : 'Mute';
+      }
+      const pw = el.querySelector('[data-power]');
+      if (pw) { const isOn = !!st && st.state !== 'off' && st.state !== 'standby'; pw.classList.toggle('on', isOn); pw.title = isOn ? 'Turn off' : 'Turn on'; }
     }
+    this._patchAvol();
     const count = root.querySelector('[data-count]');
     if (count) {
       const n = this._visibleSelected().length;
@@ -627,9 +803,23 @@ class EasyAnnounceCard extends HTMLElement {
     if (!call) { this._showStatus(); return; }
     v.busy = true; this._patchSend();
     const names = targets.map((id) => (this._speakers.find((s) => s.id === id) || { name: id }).name);
+    const level = this._announceLevel();
+    const volTargets = level === null ? [] : targets.filter((id) => (features(this._hass.states[id]) & FEAT.VOLUME_SET) === FEAT.VOLUME_SET);
+    const restore = volTargets.length && this._c('restore_volume') ? restoreLevels(this._hass, volTargets) : null;
+    let volNote = '';
     try {
+      if (volTargets.length) {
+        const res = await Promise.allSettled(volTargets.map((id) => this._hass.callService('media_player', 'volume_set', { entity_id: id, volume_level: level })));
+        const bad = res.filter((r) => r.status === 'rejected').length;
+        if (bad) volNote = ` Volume not set on ${bad}.`;
+        await new Promise((r) => setTimeout(r, VOLUME_SETTLE_MS));
+      }
       await this._hass.callService(call[0], call[1], call[2]);
-      this._setStatus('ok', `Announced on ${names.length > 3 ? `${names.length} speakers` : names.join(', ')}.`);
+      if (restore && Object.keys(restore).length) {
+        scheduleRestore(restore, restoreDelayMs(this._config, msg));
+        volNote += ' Volume goes back afterwards.';
+      }
+      this._setStatus('ok', `Announced on ${names.length > 3 ? `${names.length} speakers` : names.join(', ')}.${volNote}`);
       targets.forEach((id) => this._flash(id));
       if (this._c('clear_after_send')) {
         v.message = '';
@@ -638,6 +828,8 @@ class EasyAnnounceCard extends HTMLElement {
         this._refreshPresetsActive();
       }
     } catch (e) {
+      // Nothing was announced: put the volume straight back.
+      if (restore && Object.keys(restore).length) scheduleRestore(restore, 0);
       this._setStatus('err', `Not sent: ${errText(e)}`);
     } finally {
       v.busy = false; this._patchSend();
@@ -854,7 +1046,15 @@ const EDITOR_CSS = `
 `;
 
 // Settings that show or hide other settings: changing one re-renders the editor.
-const REVEAL_KEYS = new Set(['send_with', 'presets_entity', 'show_message_box', 'speaker_source', 'hide_unavailable', 'tap_action', 'preset_style']);
+const REVEAL_KEYS = new Set(['send_with', 'presets_entity', 'show_message_box', 'speaker_source', 'hide_unavailable', 'tap_action', 'preset_style',
+  'show_announce_volume', 'restore_volume']);
+// Slider readouts that aren't px.
+const SLIDER_FMT = {
+  columns: (n) => (Number(n) ? String(n) : 'Auto'),
+  announce_volume: (n) => (Number(n) ? `${n}%` : 'Off'),
+  restore_after: (n) => (Number(n) ? `${n} s` : 'Auto'),
+};
+const fmtSlider = (key, n) => (SLIDER_FMT[key] ? SLIDER_FMT[key](n) : `${n}px`);
 
 class EasyAnnounceCardEditor extends HTMLElement {
   constructor() {
@@ -924,7 +1124,7 @@ class EasyAnnounceCardEditor extends HTMLElement {
       options.map(([v, n]) => `<option value="${esc(v)}"${String(v) === String(cur) ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select></div>`;
   }
 
-  _slider(key, label, min, max, fmt = (n) => `${n}px`) {
+  _slider(key, label, min, max, fmt = (n) => fmtSlider(key, n)) {
     const v = Number(this._c(key));
     return `<div class="eane-row eane-nowrap"><label class="lbl">${label}</label>
       <input type="range" data-skey="${key}" min="${min}" max="${max}" step="1" value="${v}">
@@ -1020,11 +1220,30 @@ class EasyAnnounceCardEditor extends HTMLElement {
     return `${this._text('title', 'Title', DEFAULT_TITLE)}
       <p class="eane-hint">Clear the title to hide it.</p>
       <div class="eane-group">Speakers</div>
-      ${this._slider('columns', 'Columns', 0, 6, (n) => (Number(n) ? String(n) : 'Auto'))}
+      ${this._slider('columns', 'Columns', 0, 6)}
       ${this._select('tap_action', 'Tapping a speaker', [['select', 'Selects it (then press Send)'], ['send', 'Announces on it straight away']])}
       ${this._check('show_state', 'Show what each speaker is doing', '(Idle, Playing · song)')}
       ${this._c('tap_action') === 'select' ? `${this._check('show_select_all', 'All / None buttons')}
       ${this._check('remember_selection', 'Remember the selected speakers', '(in this browser)')}` : ''}`;
+  }
+
+  _volumeBody() {
+    const restore = this._c('restore_volume');
+    return `<p class="eane-hint">Controls on each speaker. Each one only shows on speakers that support it.</p>
+      <div class="eane-group first">On each speaker</div>
+      ${this._check('show_volume', 'Volume slider')}
+      ${this._check('show_mute', 'Mute button')}
+      ${this._check('show_power', 'Power button')}
+      <div class="eane-group">Announcement volume</div>
+      ${this._check('show_announce_volume', 'Show "Announce at" by the message', '(a switch and a slider)')}
+      ${this._c('show_announce_volume') ? `<p class="eane-hint">When it's on, every selected speaker is set to that volume just before the announcement.
+        Each browser remembers the last level used.</p>
+      ${this._slider('announce_volume', 'Starts at', 0, 100)}
+      <p class="eane-hint">Off: "Announce at" starts switched off.</p>
+      ${this._check('restore_volume', 'Put each speaker back to its volume from before the announcement')}
+      ${restore ? `${this._slider('restore_after', 'Put back after', 0, 60)}
+      <p class="eane-hint">Auto waits about 4 seconds plus the time it takes to say the message. Keep this page open until then:
+        the card sends the change, so closing the page skips it.</p>` : ''}` : ''}`;
   }
 
   _lookBody() {
@@ -1047,9 +1266,10 @@ class EasyAnnounceCardEditor extends HTMLElement {
         ${this._panel('sending', 'mdi:bullhorn-outline', 'Sending', this._sendingBody())}
         ${this._panel('messages', 'mdi:message-text-outline', 'Messages & presets', this._messagesBody())}
         ${this._panel('speakers', 'mdi:speaker-multiple', 'Speakers', this._speakersBody())}
+        ${this._panel('volume', 'mdi:volume-high', 'Volume', this._volumeBody())}
         ${this._panel('layout', 'mdi:view-grid-outline', 'Title & layout', this._layoutBody())}
         ${this._panel('look', 'mdi:palette', 'Appearance', this._lookBody())}
-        <div class="eane-foot">Easy Announce Card ${BUILD_NUMBER}</div>
+        <div class="eane-foot">Easy Announce Card (Ltek) ${BUILD_NUMBER}</div>
       </div>`;
     this._rendered = true;
     this._wire();
@@ -1072,7 +1292,7 @@ class EasyAnnounceCardEditor extends HTMLElement {
     all('[data-skey]', (el) => {
       const key = el.dataset.skey;
       const out = () => this.querySelector(`[data-val="${key}"]`);
-      el.addEventListener('input', () => { const o = out(); if (o) o.textContent = key === 'columns' ? (Number(el.value) ? el.value : 'Auto') : `${el.value}px`; });
+      el.addEventListener('input', () => { const o = out(); if (o) o.textContent = fmtSlider(key, el.value); });
       el.addEventListener('change', () => { this._set(key, Number(el.value)); this._render(); });
     });
     all('[data-reset]', (b) => b.addEventListener('click', () => { this._set(b.dataset.reset, ''); this._render(); }));
@@ -1121,6 +1341,7 @@ EasyAnnounceCard._test = {
   BUILD_NUMBER, VERSION, CARD_CSS, EDITOR_CSS, DEFAULTS, COLOR_DEFS, VIEWS,
   normalizeConfig, discoverSpeakers, cleanName, globRe, excluded, readPresets, planOptions, isPlaceholder,
   buildCall, setupProblem, rootStyleVars, colorMode, speakerState, viewKey,
+  tileControls, restoreDelayMs, restoreLevels, scheduleRestore, RESTORES, FEAT,
 };
 
 if (!customElements.get(CARD_TAG)) customElements.define(CARD_TAG, EasyAnnounceCard);

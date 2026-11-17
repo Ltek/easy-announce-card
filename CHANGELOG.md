@@ -1,5 +1,16 @@
 # Changelog
 
+## v2026.11.17.2
+
+- **Volume on each speaker:** a volume slider, a mute button and a power button, each shown or hidden on its
+  own (`show_volume`, `show_mute`, `show_power`; power is off by default). They only show on speakers that
+  support them, and using them never selects the speaker.
+- **Announce at a set volume:** an "Announce at" switch and slider by the message (`show_announce_volume`,
+  starting level `announce_volume`). Every selected speaker is set to it just before the announcement.
+- **Put the volume back** afterwards (`restore_volume`, on by default), after `restore_after` seconds or an
+  estimate from the message length. Back-to-back announcements restore the volume from before the first.
+- The card is called **Easy Announce Card (Ltek)** everywhere: the editor footer and the README title now match its HACS name.
+
 ## v2026.11.17.1
 
 First release.

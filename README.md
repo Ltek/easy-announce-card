@@ -1,4 +1,4 @@
-# Easy Announce Card
+# Easy Announce Card (Ltek)
 
 [![Add to HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Ltek&repository=easy-announce-card&category=plugin)
 
@@ -6,7 +6,7 @@ A Home Assistant Dashboard card for Alexa announcements. Tap a preset or type a 
 speakers, press **Send**. One call reaches every speaker you picked. History is in
 [CHANGELOG.md](CHANGELOG.md).
 
-![Easy Announce Card, dark theme](screenshots/01-dark.png)
+![Easy Announce Card (Ltek), dark theme](screenshots/01-dark.png)
 
 ## Features
 
@@ -15,7 +15,10 @@ speakers, press **Send**. One call reaches every speaker you picked. History is 
 - **Speakers found on their own:** every Alexa Media Player speaker, with offline ones hidden or greyed out.
   Leave some out with patterns (`*Phone*`, `This Device*`), or always add others.
 - **Pick several speakers**, or All / None, and send once. Or set the card to announce as soon as you tap a speaker.
-- Each speaker shows what it's doing (Idle, Paused, Playing · song).
+- Each speaker shows what it's doing (Idle, Paused, Playing · song), with its own **volume slider**, **mute** and
+  **power** buttons. Each one can be shown or hidden.
+- **Announce at a set volume:** every selected speaker is set to it just before the announcement, and can be
+  put back to its earlier volume afterwards.
 - **Sends with Alexa Media Player directly** (`notify.alexa_media`, announce or speak), **or through your own
   script**, so automations and the card announce the same way.
 - Remembers the speakers you picked, in each browser.
@@ -116,6 +119,13 @@ Every option is in the visual editor.
 | `show_state` | `true` | What each speaker is doing, under its name. |
 | `show_select_all` | `true` | All / None buttons. |
 | `remember_selection` | `true` | Remember the selected speakers in this browser. |
+| `show_volume` | `true` | Volume slider on each speaker. |
+| `show_mute` | `true` | Mute button on each speaker. |
+| `show_power` | `false` | Power button on each speaker. |
+| `show_announce_volume` | `true` | The "Announce at" switch and slider by the message. |
+| `announce_volume` | `0` | The level "Announce at" starts at, in %. `0` = starts switched off. |
+| `restore_volume` | `true` | Put each speaker back to its volume from before the announcement. |
+| `restore_after` | `0` | Seconds to wait before putting the volume back. `0` = about 4 s plus the time it takes to say the message. |
 | `font_size_title`, `font_size_message`, `font_size_name`, `icon_size` | 14, 14, 13, 24 | Sizes in px. |
 | `color_title`, `color_preset`, `color_selected`, `color_icon`, `color_send` | theme | Colors: a theme variable, a hex color or any CSS color. |
 
@@ -125,6 +135,14 @@ Saving and deleting presets rewrites the `input_select`'s options, which Home As
 do. Other users can use the presets but don't see the edit buttons. An `input_select` set up in YAML can't be
 changed from the card. Any placeholder option (`---`, `Select...`) stays first, so automations that reset
 the helper to it keep working.
+
+### Volume
+
+Volume, mute and power only show on speakers that support them. **Announce at** sets every selected speaker
+to that volume just before announcing; each browser remembers the last level. With `restore_volume`, the
+card puts each speaker back afterwards. Keep the page open until then: the card sends that change itself,
+so closing the page skips it. If you announce again before then, the speakers go back to the volume they
+had before the first announcement.
 
 ![Card editor](screenshots/04-editor.png)
 
