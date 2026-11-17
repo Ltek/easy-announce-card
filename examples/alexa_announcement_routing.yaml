@@ -1,0 +1,41 @@
+alexa_announcement_routing:
+  alias: Alexa Announcement Routing
+  description: >-
+    Announce a message on one or more Alexa speakers. Called by Easy Announce Card and by automations.
+  # queued: a second announcement waits for the first instead of being dropped.
+  mode: queued
+  fields:
+    message:
+      name: Message
+      description: What to announce. Leave it out to announce input_text.alexa_announcement_text.
+      selector:
+        text:
+          multiline: true
+    target:
+      name: Speakers
+      description: One media player, or a list of them.
+      required: true
+      selector:
+        entity:
+          multiple: true
+          filter:
+            - domain: media_player
+              integration: alexa_media
+  variables:
+    # Older dashboards send a literal "{{ ... }}" as the message (a Dashboard action can't render
+    # templates), so a message that still contains "{{" falls back to the input_text, as before.
+    announcement: >-
+      {{ message if message is defined and message and ('{' ~ '{') not in message
+         else states('input_text.alexa_announcement_text') }}
+    target_device: "{{ target }}"
+  sequence:
+    - action: notify.alexa_media
+      data:
+        message: "{{ announcement }}"
+        target: "{{ target_device }}"
+        data:
+          type: announce
+    - action: system_log.write
+      data:
+        message: "Alexa announcement sent to {{ target_device }}: {{ announcement }}"
+        level: info
