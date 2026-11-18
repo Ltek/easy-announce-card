@@ -22,11 +22,17 @@ speakers, press **Send**. One call reaches every speaker you picked. History is 
 - **Sends with Alexa Media Player directly** (`notify.alexa_media`, announce or speak), **or through your own
   script**, so automations and the card announce the same way.
 - Remembers the speakers you picked, in each browser.
+- **Style every piece of text and every icon on its own:** size, weight and color for each text (title, presets,
+  message, Send, speaker names, state line, …), size and color for each icon (speaker, check mark, mute, power, …).
 - A visual editor for every setting. Every color can follow your theme or be custom; every size is a slider.
 
 | Light theme, 2 columns | Editing presets |
 |---|---|
 | ![Light theme](screenshots/02-light.png) | ![Editing presets](screenshots/03-edit-presets.png) |
+
+| Styled text and icons | Appearance settings |
+|---|---|
+| ![Styled](screenshots/05-styled.png) | ![Appearance settings](screenshots/06-editor-appearance.png) |
 
 ## Requirements
 
@@ -128,8 +134,31 @@ Every option is in the visual editor.
 | `announce_volume` | `0` | The level "Announce at" starts at, in %. `0` = starts switched off. |
 | `restore_volume` | `true` | Put each speaker back to its volume from before the announcement. |
 | `restore_after` | `0` | Seconds to wait before putting the volume back. `0` = about 4 s plus the time it takes to say the message. |
-| `font_size_title`, `font_size_message`, `font_size_name`, `icon_size` | 14, 14, 13, 24 | Sizes in px. |
-| `color_title`, `color_preset`, `color_selected`, `color_icon`, `color_send` | theme | Colors: a theme variable, a hex color or any CSS color. |
+| `color_selected` | theme primary | The selected-speaker accent (tile border, check mark, All / None). |
+| `color_send` | theme primary | Send button background. |
+| `<text>_size`, `<text>_weight`, `<text>_color` | see below | Each piece of text, on its own. |
+| `<icon>_size`, `<icon>_color` | see below | Each icon, on its own. |
+
+Colors take a theme variable (`var(--accent-color)`), a hex color or any CSS color. Weights are 300–800.
+
+| Text (`<text>`) | Size, weight | | Icon (`<icon>`) | Size | Extra color |
+|---|---|---|---|---|---|
+| `title` | 14, 600 | | `edit_icon` (edit presets) | 20 | |
+| `preset` (chips / dropdown) | 14, 400 | | `delete_icon` (on the chips) | 16 | |
+| `message` (message box) | 14, 400 | | `save_icon` (save as preset) | 20 | |
+| `send` (Send button text) | 14, 600 | | `send_icon` | 18 | |
+| `avol` ("Announce at") | 12, 400 | | `speaker_icon` | 24 | `speaker_icon_on_color` (selected) |
+| `avol_value` (volume readout) | 12, 600 | | `check_icon` (selected mark) | 16 | |
+| `section` ("Speakers" heading) | 11, 600 | | `mute_icon` | 18 | `mute_icon_muted_color` (muted) |
+| `count` (selected count) | 11, 500 | | `power_icon` | 18 | `power_icon_on_color` (on) |
+| `links` (All / None) | 12, 600 | | | | |
+| `name` (speaker names) | 13, 500 | | | | |
+| `state` (speaker state) | 11, 400 | | | | |
+| `status` (status line) | 12, 400 | | | | |
+
+For example `name_weight: 700`, `speaker_icon_color: var(--accent-color)`. The status line keeps its green /
+amber / red unless you give it a color. Cards set up before this build keep their look: `font_size_*`,
+`icon_size`, `color_title`, `color_preset` and `color_icon` move to the new keys by themselves.
 
 ### Presets and admin rights
 

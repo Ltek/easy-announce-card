@@ -1,5 +1,5 @@
 // Easy Announce Card (Ltek) — Home Assistant Dashboard card for Alexa announcements
-// Version: v2026.11.18.3
+// Version: v2026.11.18.4
 //
 // Type a message (or tap a preset), pick the speakers, press Send. One call reaches every
 // selected speaker:
@@ -30,7 +30,7 @@
 // interpolated into it); per-card values are custom properties set inline on the card root.
 // The card renders once and patches itself on every state change.
 
-const BUILD_NUMBER = 'v2026.11.18.3';
+const BUILD_NUMBER = 'v2026.11.18.4';
 const VERSION = BUILD_NUMBER.slice(1);
 const CARD_TAG = 'easy-announce-card';
 const EDITOR_TAG = 'easy-announce-card-editor';
@@ -75,26 +75,56 @@ const DEFAULTS = {
   announce_volume: 0,
   restore_volume: true,
   restore_after: 0,
-  font_size_title: 14,
-  font_size_name: 13,
-  font_size_message: 14,
-  icon_size: 24,
 };
+
+// Every piece of text on the card, styled on its own: <item>_size (px), <item>_weight, <item>_color.
+// [item, label, size, weight, color "unset" label, seed hex, color fallback ('' = the card picks per state)]
+const SEC = ['Theme secondary text', '#9e9e9e', 'var(--secondary-text-color)'];
+const TXT = ['Theme text', '#e1e1e1', 'var(--primary-text-color)'];
+const TEXT_ITEMS = [
+  ['title', 'Title', 14, 600, ...TXT],
+  ['preset', 'Preset chips', 14, 400, ...TXT],
+  ['message', 'Message box', 14, 400, ...TXT],
+  ['send', 'Send button text', 14, 600, 'Text on primary', '#ffffff', 'var(--text-primary-color, #fff)'],
+  ['avol', '"Announce at"', 12, 400, ...SEC],
+  ['avol_value', 'Volume readout', 12, 600, ...TXT],
+  ['section', '"Speakers" heading', 11, 600, ...SEC],
+  ['count', 'Selected count', 11, 500, ...SEC],
+  ['links', 'All / None', 12, 600, 'Selected color', '#03a9f4', 'var(--ean-c-selected)'],
+  ['name', 'Speaker names', 13, 500, ...TXT],
+  ['state', 'Speaker state', 11, 400, ...SEC],
+  ['status', 'Status line', 12, 400, 'By result (green / amber / red)', '#9e9e9e', ''],
+];
+// Every icon, styled on its own: <item>_size (px), <item>_color, plus a color for its "on" state where it has one.
+// [item, label, size, unset label, seed hex, fallback, [state color key, label, unset label, seed hex, fallback]?]
+const ICO = ['Theme secondary text', '#9e9e9e', 'var(--secondary-text-color)'];
+const ICON_ITEMS = [
+  ['edit_icon', 'Edit presets', 20, ...ICO],
+  ['delete_icon', 'Delete preset (on the chips)', 16, ...ICO],
+  ['save_icon', 'Save as preset', 20, ...ICO],
+  ['send_icon', 'Send button icon', 18, 'Same as the Send text', '#ffffff', 'var(--ean-send-c)'],
+  ['speaker_icon', 'Speaker icon', 24, 'Theme state icon', '#44739e', 'var(--state-icon-color, var(--paper-item-icon-color, #44739e))',
+    ['speaker_icon_on_color', 'When selected', 'Selected color', '#03a9f4', 'var(--ean-c-selected)']],
+  ['check_icon', 'Selected check mark', 16, 'Selected color', '#03a9f4', 'var(--ean-c-selected)'],
+  ['mute_icon', 'Mute button', 18, ...ICO, ['mute_icon_muted_color', 'When muted', 'Theme warning', '#ffa600', 'var(--warning-color, #f4b942)']],
+  ['power_icon', 'Power button', 18, ...ICO, ['power_icon_on_color', 'When on', 'Selected color', '#03a9f4', 'var(--ean-c-selected)']],
+];
+const WEIGHTS = [[300, 'Light'], [400, 'Normal'], [500, 'Medium'], [600, 'Semibold'], [700, 'Bold'], [800, 'Extra bold']];
+for (const [item, , size, weight] of TEXT_ITEMS) { DEFAULTS[`${item}_size`] = size; DEFAULTS[`${item}_weight`] = weight; }
+for (const [item, , size] of ICON_ITEMS) DEFAULTS[`${item}_size`] = size;
+// Keys from v2026.11.17 / .18 → the per-item keys (font_size_message styled the presets too).
+const LEGACY_KEYS = [
+  ['font_size_title', ['title_size']], ['font_size_message', ['message_size', 'preset_size']], ['font_size_name', ['name_size']],
+  ['icon_size', ['speaker_icon_size']], ['color_title', ['title_color']], ['color_preset', ['preset_color']], ['color_icon', ['speaker_icon_color']],
+];
 // key, label, "unset" label, seed hex, fallback CSS used by the card
 const COLOR_DEFS = [
-  ['color_title', 'Title', 'Theme text', '#e1e1e1', 'var(--primary-text-color)'],
   ['color_selected', 'Selected speaker', 'Theme primary', '#03a9f4', 'var(--primary-color)'],
-  ['color_icon', 'Speaker icon', 'Theme state icon', '#44739e', 'var(--state-icon-color, var(--paper-item-icon-color, #44739e))'],
   ['color_send', 'Send button', 'Theme primary', '#03a9f4', 'var(--primary-color)'],
-  ['color_preset', 'Preset chips', 'Theme text', '#e1e1e1', 'var(--primary-text-color)'],
+  ...TEXT_ITEMS.map(([item, label, , , unset, seed, fb]) => [`${item}_color`, label, unset, seed, fb]),
+  ...ICON_ITEMS.flatMap(([item, label, , unset, seed, fb, on]) => [[`${item}_color`, label, unset, seed, fb], ...(on ? [on] : [])]),
 ];
 const COLOR_KEYS = COLOR_DEFS.map((d) => d[0]);
-const SIZE_DEFS = [ // key, label, min, max
-  ['font_size_title', 'Title', 8, 32],
-  ['font_size_message', 'Message & presets', 8, 24],
-  ['font_size_name', 'Speaker names', 8, 24],
-  ['icon_size', 'Speaker icons', 12, 48],
-];
 const LIST_KEYS = ['include', 'exclude', 'strip_words'];
 
 const isDefault = (key, v) => {
@@ -106,6 +136,12 @@ const isDefault = (key, v) => {
 /** Drop defaults, empty lists and empty colors. Idempotent; never touches keys it doesn't know (type, card_mod, …). */
 function normalizeConfig(raw) {
   const c = { ...(raw || {}) };
+  for (const [old, keys] of LEGACY_KEYS) {
+    if (!(old in c)) continue;
+    for (const k of keys) if (!(k in c) && c[old] !== '' && c[old] != null) c[k] = c[old];
+    delete c[old];
+  }
+  for (const [item] of TEXT_ITEMS) { const k = `${item}_weight`; if (k in c && c[k] !== '' && c[k] != null) c[k] = Number(c[k]); }
   for (const k of Object.keys(DEFAULTS)) {
     if (!(k in c)) continue;
     if (k === 'title') { if (c.title === null || c.title === DEFAULT_TITLE) delete c.title; continue; } // '' = no title line
@@ -353,44 +389,48 @@ const CARD_CSS = `
   :host { display: block; font-family: var(--primary-font-family, sans-serif); }
   ha-card.card { padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
   .head { display: flex; align-items: center; gap: 8px; min-height: 20px; }
-  .title { flex: 1 1 auto; min-width: 0; font-size: var(--ean-fs-title); font-weight: 600; color: var(--ean-c-title);
+  .title { flex: 1 1 auto; min-width: 0; font-size: var(--ean-title-fs); font-weight: var(--ean-title-fw); color: var(--ean-title-c);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .head-btn, .icon-btn { border: none; background: none; padding: 0; margin: 0; cursor: pointer; line-height: 0; color: var(--secondary-text-color); }
-  .head-btn ha-icon, .icon-btn ha-icon { --mdc-icon-size: 20px; width: 20px; height: 20px; }
-  .head-btn:hover, .icon-btn:hover { color: var(--primary-text-color); }
+  .head-btn, .icon-btn { border: none; background: none; padding: 0; margin: 0; cursor: pointer; line-height: 0; }
+  .head-btn { color: var(--ean-edit_icon-c); }
+  .head-btn ha-icon { --mdc-icon-size: var(--ean-edit_icon-sz); width: var(--ean-edit_icon-sz); height: var(--ean-edit_icon-sz); }
+  .icon-btn { color: var(--ean-save_icon-c); }
+  .icon-btn ha-icon { --mdc-icon-size: var(--ean-save_icon-sz); width: var(--ean-save_icon-sz); height: var(--ean-save_icon-sz); }
+  .head-btn:hover, .icon-btn:hover, .ctl-btn:hover { filter: brightness(1.35); }
   .head-btn.on { color: var(--ean-c-selected); }
   .icon-btn:disabled { opacity: .35; cursor: default; }
 
   .presets { display: flex; flex-wrap: wrap; gap: 6px; }
   .presets:empty { display: none; }
   .chip { max-width: 100%; min-height: 30px; padding: 4px 12px; border-radius: 15px; border: 1px solid var(--divider-color); background: none;
-    cursor: pointer; color: var(--ean-c-preset); font-family: inherit; font-size: var(--ean-fs-msg); text-align: left;
+    cursor: pointer; color: var(--ean-preset-c); font-family: inherit; font-size: var(--ean-preset-fs); font-weight: var(--ean-preset-fw); text-align: left;
     display: inline-flex; align-items: center; gap: 6px; box-sizing: border-box; }
   .chip:hover { border-color: var(--ean-c-selected); }
   .chip.on { border-color: var(--ean-c-selected); background: color-mix(in srgb, var(--ean-c-selected) 18%, transparent); }
   .chip .chip-text { overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-  .chip .chip-del { line-height: 0; color: var(--secondary-text-color); }
-  .chip .chip-del ha-icon { --mdc-icon-size: 16px; width: 16px; height: 16px; }
+  .chip .chip-del { line-height: 0; color: var(--ean-delete_icon-c); }
+  .chip .chip-del ha-icon { --mdc-icon-size: var(--ean-delete_icon-sz); width: var(--ean-delete_icon-sz); height: var(--ean-delete_icon-sz); }
   .chip.managing:hover { border-color: var(--error-color, #db4437); }
   .chip.managing:hover .chip-del { color: var(--error-color, #db4437); }
   select.preset-select { width: 100%; height: 36px; box-sizing: border-box; padding: 0 10px; border: 1px solid var(--divider-color); border-radius: 8px;
-    background: var(--card-background-color); color: var(--primary-text-color); font-family: inherit; font-size: var(--ean-fs-msg); }
+    background: var(--card-background-color); color: var(--ean-preset-c); font-family: inherit; font-size: var(--ean-preset-fs); font-weight: var(--ean-preset-fw); }
 
   .compose { display: flex; align-items: flex-end; gap: 8px; }
   textarea.msg { flex: 1 1 auto; min-width: 0; min-height: 40px; max-height: 140px; resize: vertical; box-sizing: border-box; padding: 9px 12px;
-    border: 1px solid var(--divider-color); border-radius: 10px; background: var(--card-background-color); color: var(--primary-text-color);
-    font-family: inherit; font-size: var(--ean-fs-msg); line-height: 1.35; }
+    border: 1px solid var(--divider-color); border-radius: 10px; background: var(--card-background-color); color: var(--ean-message-c);
+    font-family: inherit; font-size: var(--ean-message-fs); font-weight: var(--ean-message-fw); line-height: 1.35; }
   textarea.msg:focus { outline: none; border-color: var(--ean-c-selected); }
   .send { flex: none; height: 40px; padding: 0 16px; border: none; border-radius: 10px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
-    background: var(--ean-c-send); color: var(--text-primary-color, #fff); font-family: inherit; font-size: 14px; font-weight: 600; }
-  .send ha-icon { --mdc-icon-size: 18px; width: 18px; height: 18px; }
+    background: var(--ean-c-send); color: var(--ean-send-c); font-family: inherit; font-size: var(--ean-send-fs); font-weight: var(--ean-send-fw); }
+  .send ha-icon { --mdc-icon-size: var(--ean-send_icon-sz); width: var(--ean-send_icon-sz); height: var(--ean-send_icon-sz); color: var(--ean-send_icon-c); }
   .send:disabled { opacity: .4; cursor: default; }
   .send.busy { opacity: .7; }
 
-  .spk-head { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em;
-    color: var(--secondary-text-color); }
-  .spk-head .count { flex: 1 1 auto; text-transform: none; letter-spacing: 0; font-weight: 500; }
-  .link { border: none; background: none; padding: 2px 4px; cursor: pointer; color: var(--ean-c-selected); font-family: inherit; font-size: 12px; font-weight: 600; }
+  .spk-head { display: flex; align-items: center; gap: 8px; font-size: var(--ean-section-fs); font-weight: var(--ean-section-fw); text-transform: uppercase;
+    letter-spacing: .06em; color: var(--ean-section-c); }
+  .spk-head .count { flex: 1 1 auto; text-transform: none; letter-spacing: 0; font-size: var(--ean-count-fs); font-weight: var(--ean-count-fw); color: var(--ean-count-c); }
+  .link { border: none; background: none; padding: 2px 4px; cursor: pointer; color: var(--ean-links-c); font-family: inherit; font-size: var(--ean-links-fs);
+    font-weight: var(--ean-links-fw); text-transform: none; letter-spacing: 0; }
   .link:disabled { color: var(--disabled-text-color, var(--secondary-text-color)); cursor: default; }
 
   .grid { display: grid; grid-template-columns: var(--ean-cols); gap: 8px; }
@@ -404,35 +444,39 @@ const CARD_CSS = `
   .tile:focus-visible { outline: 2px solid var(--ean-c-selected); outline-offset: 1px; }
   .tile-top { display: flex; align-items: center; gap: 10px; min-width: 0; }
   .ctl { display: flex; align-items: center; gap: 6px; min-width: 0; cursor: default; }
-  .ctl-btn { flex: none; border: none; background: none; padding: 0; margin: 0; cursor: pointer; line-height: 0; color: var(--secondary-text-color); }
-  .ctl-btn ha-icon { --mdc-icon-size: 18px; width: 18px; height: 18px; }
-  .ctl-btn:hover { color: var(--primary-text-color); }
-  .ctl-btn.on { color: var(--ean-c-selected); }
-  .ctl-btn.muted { color: var(--warning-color, #f4b942); }
+  .ctl-btn { flex: none; border: none; background: none; padding: 0; margin: 0; cursor: pointer; line-height: 0; }
+  .ctl-btn[data-mute] { color: var(--ean-mute_icon-c); }
+  .ctl-btn[data-mute] ha-icon { --mdc-icon-size: var(--ean-mute_icon-sz); width: var(--ean-mute_icon-sz); height: var(--ean-mute_icon-sz); }
+  .ctl-btn[data-mute].muted { color: var(--ean-mute_icon_muted-c); }
+  .ctl-btn[data-power] { color: var(--ean-power_icon-c); }
+  .ctl-btn[data-power] ha-icon { --mdc-icon-size: var(--ean-power_icon-sz); width: var(--ean-power_icon-sz); height: var(--ean-power_icon-sz); }
+  .ctl-btn[data-power].on { color: var(--ean-power_icon_on-c); }
   input.vol { flex: 1 1 auto; min-width: 0; width: 100%; margin: 0; accent-color: var(--ean-c-selected); cursor: pointer; }
-  .avol { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--secondary-text-color); }
+  .avol { display: flex; align-items: center; gap: 8px; font-size: var(--ean-avol-fs); font-weight: var(--ean-avol-fw); color: var(--ean-avol-c); }
   .avol label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; }
   .avol input[type="checkbox"] { margin: 0; accent-color: var(--ean-c-send); }
   .avol input[type="range"] { flex: 1 1 auto; min-width: 0; margin: 0; accent-color: var(--ean-c-send); cursor: pointer; }
   .avol input[type="range"]:disabled { opacity: .4; cursor: default; }
-  .avol .avol-val { flex: none; min-width: 36px; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--primary-text-color); }
-  .avol.off .avol-val { color: var(--secondary-text-color); font-weight: 500; }
+  .avol .avol-val { flex: none; min-width: 36px; text-align: right; font-size: var(--ean-avol_value-fs); font-weight: var(--ean-avol_value-fw);
+    font-variant-numeric: tabular-nums; color: var(--ean-avol_value-c); }
+  .avol.off .avol-val { opacity: .6; }
   .tile.flash { border-color: var(--success-color, #43a047); background: color-mix(in srgb, var(--success-color, #43a047) 18%, transparent); }
-  .tile ha-icon.spk-icon { flex: none; --mdc-icon-size: var(--ean-icon); width: var(--ean-icon); height: var(--ean-icon); color: var(--ean-c-icon); }
-  .tile.on ha-icon.spk-icon { color: var(--ean-c-selected); }
+  .tile ha-icon.spk-icon { flex: none; --mdc-icon-size: var(--ean-speaker_icon-sz); width: var(--ean-speaker_icon-sz); height: var(--ean-speaker_icon-sz);
+    color: var(--ean-speaker_icon-c); }
+  .tile.on ha-icon.spk-icon { color: var(--ean-speaker_icon_on-c); }
   .tile .txt { display: flex; flex-direction: column; min-width: 0; padding-right: 14px; } /* room for the check mark */
-  .tile .name { font-size: var(--ean-fs-name); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .tile .state { font-size: 11px; color: var(--secondary-text-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .tile .check { position: absolute; top: 4px; right: 6px; line-height: 0; color: var(--ean-c-selected); display: none; }
-  .tile .check ha-icon { --mdc-icon-size: 16px; width: 16px; height: 16px; }
+  .tile .name { font-size: var(--ean-name-fs); font-weight: var(--ean-name-fw); color: var(--ean-name-c); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tile .state { font-size: var(--ean-state-fs); font-weight: var(--ean-state-fw); color: var(--ean-state-c); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tile .check { position: absolute; top: 4px; right: 6px; line-height: 0; color: var(--ean-check_icon-c); display: none; }
+  .tile .check ha-icon { --mdc-icon-size: var(--ean-check_icon-sz); width: var(--ean-check_icon-sz); height: var(--ean-check_icon-sz); }
   .tile.on .check { display: block; }
   .empty { color: var(--secondary-text-color); font-size: 13px; }
 
-  .status { font-size: 12px; color: var(--secondary-text-color); min-height: 16px; }
+  .status { font-size: var(--ean-status-fs); font-weight: var(--ean-status-fw); color: var(--ean-status-c, var(--secondary-text-color)); min-height: 16px; }
   .status:empty { display: none; }
-  .status.ok { color: var(--success-color, #43a047); }
-  .status.err { color: var(--error-color, #db4437); }
-  .status.warn { color: var(--warning-color, #f4b942); }
+  .status.ok { color: var(--ean-status-c, var(--success-color, #43a047)); }
+  .status.err { color: var(--ean-status-c, var(--error-color, #db4437)); }
+  .status.warn { color: var(--ean-status-c, var(--warning-color, #f4b942)); }
 `;
 
 /** The per-card values, as custom properties on the card root (the stylesheet never changes). */
@@ -443,9 +487,12 @@ function rootStyleVars(c) {
   const cols = n > 0 ? `repeat(${Math.round(n)}, minmax(0, 1fr))` : 'repeat(auto-fill, minmax(140px, 1fr))';
   return [
     `--ean-cols:${cols}`,
-    `--ean-fs-title:${px('font_size_title')}`, `--ean-fs-msg:${px('font_size_message')}`, `--ean-fs-name:${px('font_size_name')}`,
-    `--ean-icon:${px('icon_size')}`,
-    ...COLOR_KEYS.map((k) => `--ean-c-${k.slice(6)}:${color(k)}`),
+    `--ean-c-selected:${color('color_selected')}`, `--ean-c-send:${color('color_send')}`,
+    ...TEXT_ITEMS.flatMap(([item]) => [`--ean-${item}-fs:${px(`${item}_size`)}`, `--ean-${item}-fw:${Number(cfg(c, `${item}_weight`))}`,
+      // '' fallback: only set when chosen, so the card's own per-state colors apply otherwise
+      ...(color(`${item}_color`) ? [`--ean-${item}-c:${color(`${item}_color`)}`] : [])]),
+    ...ICON_ITEMS.flatMap(([item, , , , , , on]) => [`--ean-${item}-sz:${px(`${item}_size`)}`, `--ean-${item}-c:${color(`${item}_color`)}`,
+      ...(on ? [`--ean-${on[0].replace(/_color$/, '')}-c:${color(on[0])}`] : [])]),
   ].join(';');
 }
 
@@ -1073,7 +1120,7 @@ const EDITOR_CSS = `
 
 // Settings that show or hide other settings: changing one re-renders the editor.
 const REVEAL_KEYS = new Set(['send_with', 'presets_entity', 'show_message_box', 'speaker_source', 'hide_unavailable', 'tap_action', 'preset_style',
-  'show_announce_volume', 'restore_volume']);
+  'show_announce_volume', 'restore_volume', 'show_state', 'show_select_all', 'show_mute', 'show_power', 'allow_edit_presets']);
 // Slider readouts that aren't px.
 const SLIDER_FMT = {
   columns: (n) => (Number(n) ? String(n) : 'Auto'),
@@ -1160,8 +1207,9 @@ class EasyAnnounceCardEditor extends HTMLElement {
 
   _datalist(id, ids) { return `<datalist id="${id}">${ids.map((x) => `<option value="${esc(x)}"></option>`).join('')}</datalist>`; }
 
-  _colorControl(key) {
-    const [, label, defaultLabel, seedHex] = COLOR_DEFS.find((d) => d[0] === key);
+  _colorControl(key, labelOverride) {
+    const [, defLabel, defaultLabel, seedHex] = COLOR_DEFS.find((d) => d[0] === key);
+    const label = labelOverride || defLabel;
     const cur = this._config[key] || '';
     const mode = this._cmode[key] || colorMode(cur);
     let field = '';
@@ -1276,13 +1324,44 @@ class EasyAnnounceCardEditor extends HTMLElement {
         the card sends the change, so closing the page skips it.</p>` : ''}` : ''}`;
   }
 
+  /** Size, weight and color for one piece of text, under its own group subtitle. */
+  _textStyle(item, first = false) {
+    const [, label, , weight] = TEXT_ITEMS.find((x) => x[0] === item);
+    return `<div class="eane-group${first ? ' first' : ''}">${label}</div>
+      ${this._slider(`${item}_size`, 'Size', 8, 32)}
+      ${this._select(`${item}_weight`, 'Weight', WEIGHTS.map(([w, n]) => [w, w === weight ? `${n} (default)` : n]))}
+      ${this._colorControl(`${item}_color`, 'Color')}`;
+  }
+
+  /** Size and color for one icon (and its "on" color), under its own group subtitle. */
+  _iconStyle(item, first = false) {
+    const [, label, , , , , on] = ICON_ITEMS.find((x) => x[0] === item);
+    return `<div class="eane-group${first ? ' first' : ''}">${label}</div>
+      ${this._slider(`${item}_size`, 'Size', 10, 48)}
+      ${this._colorControl(`${item}_color`, 'Color')}
+      ${on ? this._colorControl(on[0], on[1]) : ''}`;
+  }
+
   _lookBody() {
-    const c = (k) => this._colorControl(k);
-    const s = (k) => { const d = SIZE_DEFS.find((x) => x[0] === k); return this._slider(k, d[1], d[2], d[3]); };
-    return `<p class="eane-hint">Sizes and colors. Every color can follow your theme or be custom; ↺ puts a size back to its default.</p>
-      ${this._sub('look-text', 'Text', [s('font_size_title'), c('color_title'), s('font_size_message'), c('color_preset')].join(''))}
-      ${this._sub('look-speakers', 'Speakers', [s('font_size_name'), s('icon_size'), c('color_icon'), c('color_selected')].join(''))}
-      ${this._sub('look-send', 'Send button', c('color_send'))}`;
+    const presets = !!this._config.presets_entity;
+    const box = this._c('show_message_box');
+    const edit = presets && this._c('allow_edit_presets');
+    const subs = [
+      ['look-colors', 'Colors', [this._colorControl('color_selected'), this._colorControl('color_send', 'Send button background')]],
+      ['look-title', 'Title', [this._textStyle('title', true), ...(edit ? [this._iconStyle('edit_icon')] : [])]],
+      ...(presets ? [['look-presets', 'Presets', [this._textStyle('preset', true), ...(edit ? [this._iconStyle('delete_icon')] : [])]]] : []),
+      ...(box ? [['look-message', 'Message & Send', [this._textStyle('message', true), ...(edit ? [this._iconStyle('save_icon')] : []),
+        this._textStyle('send'), this._iconStyle('send_icon')]]] : []),
+      ...(this._c('show_announce_volume') ? [['look-avol', 'Announce at', [this._textStyle('avol', true), this._textStyle('avol_value')]]] : []),
+      ['look-head', 'Speakers heading', [this._textStyle('section', true), this._textStyle('count'), ...(this._c('show_select_all') ? [this._textStyle('links')] : [])]],
+      ['look-tiles', 'Speaker tiles', [this._textStyle('name', true), ...(this._c('show_state') ? [this._textStyle('state')] : []),
+        this._iconStyle('speaker_icon'), this._iconStyle('check_icon'),
+        ...(this._c('show_mute') ? [this._iconStyle('mute_icon')] : []), ...(this._c('show_power') ? [this._iconStyle('power_icon')] : [])]],
+      ['look-status', 'Status line', [this._textStyle('status', true)]],
+    ];
+    return `<p class="eane-hint">Every piece of text has its own size, weight and color; every icon its own size and color.
+      Colors can follow your theme or be custom; ↺ puts a size back to its default.</p>
+      ${subs.map(([id, title, rows]) => this._sub(id, title, rows.join(''))).join('')}`;
   }
 
   _render() {
@@ -1320,7 +1399,7 @@ class EasyAnnounceCardEditor extends HTMLElement {
     }));
     all('[data-key]', (el) => el.addEventListener('change', () => {
       const key = el.dataset.key;
-      this._set(key, el.type === 'checkbox' ? el.checked : el.value.trim());
+      this._set(key, el.type === 'checkbox' ? el.checked : /_weight$/.test(key) ? Number(el.value) : el.value.trim());
       if (REVEAL_KEYS.has(key) || key === 'script' || key === 'notify_service' || key === 'announce_type') this._render();
     }));
     all('[data-skey]', (el) => {
@@ -1375,7 +1454,7 @@ EasyAnnounceCard._test = {
   BUILD_NUMBER, VERSION, CARD_CSS, EDITOR_CSS, DEFAULTS, COLOR_DEFS, VIEWS,
   normalizeConfig, discoverSpeakers, cleanName, globRe, excluded, readPresets, planOptions, isPlaceholder,
   buildCall, setupProblem, rootStyleVars, colorMode, speakerState, viewKey,
-  tileControls, restoreDelayMs, restoreLevels, scheduleRestore, RESTORES, FEAT,
+  TEXT_ITEMS, ICON_ITEMS, tileControls, restoreDelayMs, restoreLevels, scheduleRestore, RESTORES, FEAT,
 };
 
 if (!customElements.get(CARD_TAG)) customElements.define(CARD_TAG, EasyAnnounceCard);

@@ -1,5 +1,15 @@
 # Changelog
 
+## v2026.11.18.4
+
+- **Style each item on its own.** Every piece of text on the card has its own size, weight and color: title,
+  preset chips, message box, Send text, "Announce at", the volume readout, "Speakers" heading, selected count,
+  All / None, speaker names, speaker state and the status line. Every icon has its own size and color: edit,
+  delete and save preset, Send, speaker (plus its selected color), check mark, mute (plus muted) and power
+  (plus on). In Appearance, grouped by where they are on the card.
+- Cards set up before keep their look: the old `font_size_title`, `font_size_message` (presets and message
+  box), `font_size_name`, `icon_size`, `color_title`, `color_preset` and `color_icon` move to the new keys.
+
 ## v2026.11.18.3
 
 - **Everywhere speaker placement** (`everywhere_position`): Alexa's "Everywhere" group now gets its own full-width row above the other speakers by default. It can also go in its own row below them, or first or last in the list. The card finds it by name; pick it in Speakers → Everywhere (`everywhere_entity`) if yours is named differently.
