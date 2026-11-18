@@ -1,5 +1,10 @@
 # Changelog
 
+## v2026.11.18.3
+
+- **Everywhere speaker placement** (`everywhere_position`): Alexa's "Everywhere" group now gets its own full-width row above the other speakers by default. It can also go in its own row below them, or first or last in the list. The card finds it by name; pick it in Speakers → Everywhere (`everywhere_entity`) if yours is named differently.
+- Editor footer: ⭐ Star on GitHub and 🐛 Report an issue links.
+
 ## v2026.11.17.2
 
 - **Volume on each speaker:** a volume slider, a mute button and a power button, each shown or hidden on its

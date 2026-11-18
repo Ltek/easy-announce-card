@@ -114,6 +114,8 @@ Every option is in the visual editor.
 | `exclude` | | Patterns to leave out, matched against the entity ID, the name and the integration. `*` matches anything. |
 | `include` | | Media players always shown. |
 | `strip_words` | | Words dropped from names, e.g. `Echo` turns "Kitchen Echo" into "Kitchen". |
+| `everywhere_entity` | | Alexa's "Everywhere" group speaker. Empty = the speaker whose entity ID or name contains "everywhere". |
+| `everywhere_position` | `above` | Where it goes: `above` / `below` = its own full-width row above / below the other speakers; `first` / `last` = a normal tile at the start / end of the list. |
 | `columns` | `3` | Speaker columns; `0` fits as many as there's room for. |
 | `tap_action` | `select` | `select`: tap to select, then Send. `send`: tap a speaker to announce on it straight away. |
 | `show_state` | `true` | What each speaker is doing, under its name. |

@@ -1,5 +1,5 @@
 // Easy Announce Card (Ltek) — Home Assistant Dashboard card for Alexa announcements
-// Version: v2026.11.17.2
+// Version: v2026.11.18.3
 //
 // Type a message (or tap a preset), pick the speakers, press Send. One call reaches every
 // selected speaker:
@@ -30,7 +30,7 @@
 // interpolated into it); per-card values are custom properties set inline on the card root.
 // The card renders once and patches itself on every state change.
 
-const BUILD_NUMBER = 'v2026.11.17.2';
+const BUILD_NUMBER = 'v2026.11.18.3';
 const VERSION = BUILD_NUMBER.slice(1);
 const CARD_TAG = 'easy-announce-card';
 const EDITOR_TAG = 'easy-announce-card-editor';
@@ -65,6 +65,8 @@ const DEFAULTS = {
   tap_action: 'select',
   show_state: true,
   show_select_all: true,
+  everywhere_entity: '',
+  everywhere_position: 'above',
   remember_selection: true,
   show_volume: true,
   show_mute: true,
@@ -185,7 +187,24 @@ function discoverSpeakers(hass, c) {
     if (!available && hideUnavail) continue;
     out.set(id, { id, name: cleanName(friendly(st, id), c.strip_words), available, features: features(st) });
   }
-  return [...out.values()].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+  const list = [...out.values()].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+  return placeEverywhere(list, c);
+}
+
+/**
+ * The "Everywhere" speaker (Alexa's speaker group that reaches every Echo): `everywhere_entity`,
+ * else the first speaker whose entity ID or name contains "everywhere". everywhere_position:
+ * above (default) / below = a full-width tile in its own row above / below the others;
+ * first / last = a normal tile at the start / end of the list.
+ */
+function placeEverywhere(list, c) {
+  const pick = cfg(c, 'everywhere_entity');
+  const ew = pick ? list.find((s) => s.id === pick) : list.find((s) => /everywhere/i.test(s.id) || /everywhere/i.test(s.name));
+  if (!ew) return list;
+  const pos = ['above', 'below', 'first', 'last'].includes(cfg(c, 'everywhere_position')) ? cfg(c, 'everywhere_position') : 'above';
+  const rest = list.filter((s) => s !== ew);
+  const tile = { ...ew, everywhere: pos === 'above' || pos === 'below' ? 'row' : 'tile' };
+  return pos === 'above' || pos === 'first' ? [tile, ...rest] : [...rest, tile];
 }
 
 function features(st) { return Number((st && st.attributes && st.attributes.supported_features) || 0); }
@@ -237,7 +256,7 @@ function scheduleRestore(levels, delayMs) {
   }
 }
 
-const speakerSig = (list) => list.map((s) => `${s.id}|${s.name}|${s.available}|${s.features}`).join(',');
+const speakerSig = (list) => list.map((s) => `${s.id}|${s.name}|${s.available}|${s.features}|${s.everywhere || ''}`).join(',');
 
 /** Short state line for a speaker tile. */
 function speakerState(st) {
@@ -381,6 +400,7 @@ const CARD_CSS = `
   .tile:hover { border-color: color-mix(in srgb, var(--ean-c-selected) 60%, var(--divider-color)); }
   .tile.on { border-color: var(--ean-c-selected); background: color-mix(in srgb, var(--ean-c-selected) 15%, transparent); }
   .tile.off { opacity: .45; cursor: default; }
+  .tile.tile-row { grid-column: 1 / -1; }
   .tile:focus-visible { outline: 2px solid var(--ean-c-selected); outline-offset: 1px; }
   .tile-top { display: flex; align-items: center; gap: 10px; min-width: 0; }
   .ctl { display: flex; align-items: center; gap: 6px; min-width: 0; cursor: default; }
@@ -570,7 +590,7 @@ class EasyAnnounceCard extends HTMLElement {
           ${k.power ? `<button class="ctl-btn" data-power="${id}" title="Power"><ha-icon icon="mdi:power"></ha-icon></button>` : ''}
           ${k.mute ? `<button class="ctl-btn" data-mute="${id}" title="Mute"><ha-icon icon="mdi:volume-high"></ha-icon></button>` : ''}
           ${k.volume ? `<input type="range" class="vol" data-vol="${id}" min="0" max="100" step="1" aria-label="Volume">` : ''}</div>` : '';
-      return `<div class="tile" role="button" tabindex="${s.available ? 0 : -1}" data-spk="${id}" title="${id}">
+      return `<div class="tile${s.everywhere === 'row' ? ' tile-row' : ''}" role="button" tabindex="${s.available ? 0 : -1}" data-spk="${id}" title="${id}">
         <div class="tile-top"><ha-icon class="spk-icon" icon="mdi:speaker"></ha-icon>
         <span class="txt"><span class="name">${esc(s.name)}</span>${showState ? '<span class="state" data-state></span>' : ''}</span></div>
         <span class="check"><ha-icon icon="mdi:check-circle"></ha-icon></span>${ctl}</div>`;
@@ -1031,6 +1051,12 @@ const EDITOR_CSS = `
         .eane-add { align-self: flex-start; padding: var(--ltek-ctrl-pad); border: 1px dashed var(--ltek-c-accent); border-radius: var(--ltek-r-ctrl);
           background: transparent; color: var(--ltek-c-accent); font-size: var(--ltek-fs-body); font-weight: var(--ltek-fw-semibold); cursor: pointer; }
         .eane-add:hover { background: var(--ltek-c-accent-fade-soft); }
+  .eane-links { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--divider-color); }
+  .eane-star { display: inline-flex; align-items: center; gap: 6px; font-size: .82rem; font-weight: 600; color: #fff; text-decoration: none; padding: 6px 18px; border-radius: 20px;
+    background: linear-gradient(90deg, #f7a92b 0%, #f4731a 100%); box-shadow: 0 2px 8px rgba(244,115,26,.35); }
+  .eane-star:hover { filter: brightness(1.1); }
+  .eane-issue { font-size: .78rem; color: var(--primary-color); text-decoration: none; padding: 4px 10px; border: 1px solid var(--primary-color); border-radius: 14px; }
+  .eane-issue:hover { background: color-mix(in srgb, var(--primary-color) 10%, transparent); }
         .eane-foot { color: var(--ltek-c-muted); font-size: var(--ltek-fs-tiny); text-align: right; }
         .eane-name { flex: 1 1 auto; min-width: 0; color: var(--ltek-c-text); font-size: var(--ltek-fs-label); font-weight: var(--ltek-fw-normal);
           white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1211,6 +1237,10 @@ class EasyAnnounceCardEditor extends HTMLElement {
       <div class="eane-group">Always add</div>
       <p class="eane-hint">Media players to show even if the rules above would leave them out.</p>
       ${this._list('include', 'Speaker', 'media_player.office', 'eane-players')}${this._datalist('eane-players', this._ids('media_player'))}
+      <div class="eane-group">Everywhere</div>
+      <p class="eane-hint">Alexa's "Everywhere" group speaker. Found by its name; pick it here if yours has another name.</p>
+      ${this._text('everywhere_entity', 'Everywhere speaker', 'found by name', 'eane-players')}
+      ${this._select('everywhere_position', 'Place it', [['above', 'Own row above the speakers'], ['below', 'Own row below the speakers'], ['first', 'First in the list'], ['last', 'Last in the list']])}
       <div class="eane-group">Names</div>
       <p class="eane-hint">Words to drop from speaker names ("Kitchen Echo" → "Kitchen" without "Echo").</p>
       ${this._list('strip_words', 'Word', 'Echo')}`;
@@ -1269,6 +1299,10 @@ class EasyAnnounceCardEditor extends HTMLElement {
         ${this._panel('volume', 'mdi:volume-high', 'Volume', this._volumeBody())}
         ${this._panel('layout', 'mdi:view-grid-outline', 'Title & layout', this._layoutBody())}
         ${this._panel('look', 'mdi:palette', 'Appearance', this._lookBody())}
+        <div class="eane-links">
+          <a class="eane-star" href="https://github.com/Ltek/easy-announce-card" target="_blank" rel="noopener">⭐ Star on GitHub</a>
+          <a class="eane-issue" href="https://github.com/Ltek/easy-announce-card/issues" target="_blank" rel="noopener">🐛 Report an issue</a>
+        </div>
         <div class="eane-foot">Easy Announce Card (Ltek) ${BUILD_NUMBER}</div>
       </div>`;
     this._rendered = true;
