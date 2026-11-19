@@ -1,5 +1,20 @@
 # Changelog
 
+## v2026.11.19.5
+
+- **Columns per orientation:** `columns_landscape` (default 3) and `columns_portrait` (default 2). With
+  `orientation: auto` (the default) the card follows the screen, using the portrait count when the screen is
+  taller than it is wide, and switches as a tablet turns. `orientation: landscape` or `portrait` always uses
+  that count. A card that set `columns` keeps that count in both orientations.
+- **Compact tiles** (`tile_layout: compact`): the volume controls sit to the right of the speaker's name
+  and state, not under them. Auto columns give compact tiles more room.
+- **Hide "This Device"** (`hide_this_device`, on by default): Alexa Media Player's entity for the Alexa app.
+  Add it under Always add to show it anyway.
+- **All / None are chips**, and the one that matches the selection is lit.
+- **Larger default text and icons**, e.g. speaker names 16 px (was 13), speaker icons 32 px (was 24), title
+  18 px (was 14). Sizes you set yourself stay as they are.
+- "Announce at" is now **"Announce Volume"**.
+
 ## v2026.11.18.4
 
 - **Style each item on its own.** Every piece of text on the card has its own size, weight and color: title,

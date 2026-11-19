@@ -1,5 +1,5 @@
 // Easy Announce Card (Ltek) — Home Assistant Dashboard card for Alexa announcements
-// Version: v2026.11.18.4
+// Version: v2026.11.19.5
 //
 // Type a message (or tap a preset), pick the speakers, press Send. One call reaches every
 // selected speaker:
@@ -30,7 +30,7 @@
 // interpolated into it); per-card values are custom properties set inline on the card root.
 // The card renders once and patches itself on every state change.
 
-const BUILD_NUMBER = 'v2026.11.18.4';
+const BUILD_NUMBER = 'v2026.11.19.5';
 const VERSION = BUILD_NUMBER.slice(1);
 const CARD_TAG = 'easy-announce-card';
 const EDITOR_TAG = 'easy-announce-card-editor';
@@ -61,7 +61,11 @@ const DEFAULTS = {
   clear_after_send: false,
   speaker_source: 'alexa',
   hide_unavailable: true,
-  columns: 3,
+  columns_landscape: 3,
+  columns_portrait: 2,
+  orientation: 'auto',
+  tile_layout: 'stacked',
+  hide_this_device: true,
   tap_action: 'select',
   show_state: true,
   show_select_all: true,
@@ -82,38 +86,40 @@ const DEFAULTS = {
 const SEC = ['Theme secondary text', '#9e9e9e', 'var(--secondary-text-color)'];
 const TXT = ['Theme text', '#e1e1e1', 'var(--primary-text-color)'];
 const TEXT_ITEMS = [
-  ['title', 'Title', 14, 600, ...TXT],
-  ['preset', 'Preset chips', 14, 400, ...TXT],
-  ['message', 'Message box', 14, 400, ...TXT],
-  ['send', 'Send button text', 14, 600, 'Text on primary', '#ffffff', 'var(--text-primary-color, #fff)'],
-  ['avol', '"Announce at"', 12, 400, ...SEC],
-  ['avol_value', 'Volume readout', 12, 600, ...TXT],
-  ['section', '"Speakers" heading', 11, 600, ...SEC],
-  ['count', 'Selected count', 11, 500, ...SEC],
-  ['links', 'All / None', 12, 600, 'Selected color', '#03a9f4', 'var(--ean-c-selected)'],
-  ['name', 'Speaker names', 13, 500, ...TXT],
-  ['state', 'Speaker state', 11, 400, ...SEC],
-  ['status', 'Status line', 12, 400, 'By result (green / amber / red)', '#9e9e9e', ''],
+  ['title', 'Title', 18, 600, ...TXT],
+  ['preset', 'Preset chips', 16, 400, ...TXT],
+  ['message', 'Message box', 16, 400, ...TXT],
+  ['send', 'Send button text', 16, 600, 'Text on primary', '#ffffff', 'var(--text-primary-color, #fff)'],
+  ['avol', '"Announce Volume"', 14, 400, ...SEC],
+  ['avol_value', 'Volume readout', 14, 600, ...TXT],
+  ['section', '"Speakers" heading', 13, 600, ...SEC],
+  ['count', 'Selected count', 13, 500, ...SEC],
+  ['links', 'All / None', 14, 600, 'Selected color', '#03a9f4', 'var(--ean-c-selected)'],
+  ['name', 'Speaker names', 16, 500, ...TXT],
+  ['state', 'Speaker state', 13, 400, ...SEC],
+  ['status', 'Status line', 14, 400, 'By result (green / amber / red)', '#9e9e9e', ''],
 ];
 // Every icon, styled on its own: <item>_size (px), <item>_color, plus a color for its "on" state where it has one.
 // [item, label, size, unset label, seed hex, fallback, [state color key, label, unset label, seed hex, fallback]?]
 const ICO = ['Theme secondary text', '#9e9e9e', 'var(--secondary-text-color)'];
 const ICON_ITEMS = [
-  ['edit_icon', 'Edit presets', 20, ...ICO],
-  ['delete_icon', 'Delete preset (on the chips)', 16, ...ICO],
-  ['save_icon', 'Save as preset', 20, ...ICO],
-  ['send_icon', 'Send button icon', 18, 'Same as the Send text', '#ffffff', 'var(--ean-send-c)'],
-  ['speaker_icon', 'Speaker icon', 24, 'Theme state icon', '#44739e', 'var(--state-icon-color, var(--paper-item-icon-color, #44739e))',
+  ['edit_icon', 'Edit presets', 24, ...ICO],
+  ['delete_icon', 'Delete preset (on the chips)', 18, ...ICO],
+  ['save_icon', 'Save as preset', 26, ...ICO],
+  ['send_icon', 'Send button icon', 22, 'Same as the Send text', '#ffffff', 'var(--ean-send-c)'],
+  ['speaker_icon', 'Speaker icon', 32, 'Theme state icon', '#44739e', 'var(--state-icon-color, var(--paper-item-icon-color, #44739e))',
     ['speaker_icon_on_color', 'When selected', 'Selected color', '#03a9f4', 'var(--ean-c-selected)']],
-  ['check_icon', 'Selected check mark', 16, 'Selected color', '#03a9f4', 'var(--ean-c-selected)'],
-  ['mute_icon', 'Mute button', 18, ...ICO, ['mute_icon_muted_color', 'When muted', 'Theme warning', '#ffa600', 'var(--warning-color, #f4b942)']],
-  ['power_icon', 'Power button', 18, ...ICO, ['power_icon_on_color', 'When on', 'Selected color', '#03a9f4', 'var(--ean-c-selected)']],
+  ['check_icon', 'Selected check mark', 20, 'Selected color', '#03a9f4', 'var(--ean-c-selected)'],
+  ['mute_icon', 'Mute button', 22, ...ICO, ['mute_icon_muted_color', 'When muted', 'Theme warning', '#ffa600', 'var(--warning-color, #f4b942)']],
+  ['power_icon', 'Power button', 22, ...ICO, ['power_icon_on_color', 'When on', 'Selected color', '#03a9f4', 'var(--ean-c-selected)']],
 ];
 const WEIGHTS = [[300, 'Light'], [400, 'Normal'], [500, 'Medium'], [600, 'Semibold'], [700, 'Bold'], [800, 'Extra bold']];
 for (const [item, , size, weight] of TEXT_ITEMS) { DEFAULTS[`${item}_size`] = size; DEFAULTS[`${item}_weight`] = weight; }
 for (const [item, , size] of ICON_ITEMS) DEFAULTS[`${item}_size`] = size;
-// Keys from v2026.11.17 / .18 → the per-item keys (font_size_message styled the presets too).
+// Keys from v2026.11.17 / .18 → the per-item keys (font_size_message styled the presets too);
+// columns (one count for every screen) → the same count in both orientations.
 const LEGACY_KEYS = [
+  ['columns', ['columns_landscape', 'columns_portrait']],
   ['font_size_title', ['title_size']], ['font_size_message', ['message_size', 'preset_size']], ['font_size_name', ['name_size']],
   ['icon_size', ['speaker_icon_size']], ['color_title', ['title_color']], ['color_preset', ['preset_color']], ['color_icon', ['speaker_icon_color']],
 ];
@@ -196,6 +202,24 @@ const friendly = (st, id) => (st && st.attributes && st.attributes.friendly_name
  * when the entity registry isn't loaded); "all" = every media player. `include` entries are
  * always added (if they exist); exclude patterns never remove an included entity.
  */
+/** Alexa Media Player's "This Device" (the Alexa app on a phone or this browser), by name or entity ID. */
+function isThisDevice(id, name) {
+  return /\bthis device\b/i.test(name || '') || /(^|_)this_device(_|$)/.test(String(id).split('.')[1] || '');
+}
+
+/** The orientation the card lays out for: the fixed one, else the screen's (portrait when taller than wide). */
+function effectiveOrientation(c) {
+  const o = cfg(c, 'orientation');
+  if (o === 'portrait' || o === 'landscape') return o;
+  try { return window.matchMedia && window.matchMedia('(orientation: portrait)').matches ? 'portrait' : 'landscape'; } catch (e) { return 'landscape'; }
+}
+
+/** grid-template-columns for a column count (0 = as many as fit). */
+function gridColumns(n, compact) {
+  n = Number(n);
+  return n > 0 ? `repeat(${Math.round(n)}, minmax(0, 1fr))` : `repeat(auto-fill, minmax(${compact ? 260 : 150}px, 1fr))`;
+}
+
 function discoverSpeakers(hass, c) {
   if (!hass || !hass.states) return [];
   const source = cfg(c, 'speaker_source');
@@ -211,6 +235,7 @@ function discoverSpeakers(hass, c) {
     if (source === 'alexa' && reg && platform !== ALEXA_PLATFORM) continue;
     if (reg && reg[id] && reg[id].hidden) continue;
     const name = friendly(st, id);
+    if (cfg(c, 'hide_this_device') && isThisDevice(id, name)) continue;
     if (excluded(c.exclude, id, name, platform)) continue;
     const available = !UNAVAILABLE.has(st.state);
     if (!available && hideUnavail) continue;
@@ -416,11 +441,11 @@ const CARD_CSS = `
     background: var(--card-background-color); color: var(--ean-preset-c); font-family: inherit; font-size: var(--ean-preset-fs); font-weight: var(--ean-preset-fw); }
 
   .compose { display: flex; align-items: flex-end; gap: 8px; }
-  textarea.msg { flex: 1 1 auto; min-width: 0; min-height: 40px; max-height: 140px; resize: vertical; box-sizing: border-box; padding: 9px 12px;
+  textarea.msg { flex: 1 1 auto; min-width: 0; min-height: 44px; max-height: 140px; resize: vertical; box-sizing: border-box; padding: 9px 12px;
     border: 1px solid var(--divider-color); border-radius: 10px; background: var(--card-background-color); color: var(--ean-message-c);
     font-family: inherit; font-size: var(--ean-message-fs); font-weight: var(--ean-message-fw); line-height: 1.35; }
   textarea.msg:focus { outline: none; border-color: var(--ean-c-selected); }
-  .send { flex: none; height: 40px; padding: 0 16px; border: none; border-radius: 10px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+  .send { flex: none; height: 44px; padding: 0 16px; border: none; border-radius: 10px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
     background: var(--ean-c-send); color: var(--ean-send-c); font-family: inherit; font-size: var(--ean-send-fs); font-weight: var(--ean-send-fw); }
   .send ha-icon { --mdc-icon-size: var(--ean-send_icon-sz); width: var(--ean-send_icon-sz); height: var(--ean-send_icon-sz); color: var(--ean-send_icon-c); }
   .send:disabled { opacity: .4; cursor: default; }
@@ -429,12 +454,19 @@ const CARD_CSS = `
   .spk-head { display: flex; align-items: center; gap: 8px; font-size: var(--ean-section-fs); font-weight: var(--ean-section-fw); text-transform: uppercase;
     letter-spacing: .06em; color: var(--ean-section-c); }
   .spk-head .count { flex: 1 1 auto; text-transform: none; letter-spacing: 0; font-size: var(--ean-count-fs); font-weight: var(--ean-count-fw); color: var(--ean-count-c); }
-  .link { border: none; background: none; padding: 2px 4px; cursor: pointer; color: var(--ean-links-c); font-family: inherit; font-size: var(--ean-links-fs);
-    font-weight: var(--ean-links-fw); text-transform: none; letter-spacing: 0; }
-  .link:disabled { color: var(--disabled-text-color, var(--secondary-text-color)); cursor: default; }
+  .link { min-height: 30px; padding: 3px 14px; box-sizing: border-box; border: 1px solid var(--divider-color); border-radius: 15px; background: none;
+    cursor: pointer; color: var(--ean-links-c); font-family: inherit; font-size: var(--ean-links-fs); font-weight: var(--ean-links-fw);
+    text-transform: none; letter-spacing: 0; display: inline-flex; align-items: center; }
+  .link:hover { border-color: var(--ean-c-selected); }
+  .link.on { border-color: var(--ean-c-selected); background: color-mix(in srgb, var(--ean-c-selected) 18%, transparent); }
+  .link:disabled { opacity: .45; cursor: default; border-color: var(--divider-color); background: none; }
 
-  .grid { display: grid; grid-template-columns: var(--ean-cols); gap: 8px; }
-  .tile { position: relative; display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 8px 10px; border-radius: 12px; cursor: pointer;
+  /* Columns per orientation: the screen's (media query), unless the card fixes one (orient-* class). */
+  .grid { display: grid; grid-template-columns: var(--ean-cols-l); gap: 8px; }
+  @media (orientation: portrait) { .grid { grid-template-columns: var(--ean-cols-p); } }
+  ha-card.orient-landscape .grid { grid-template-columns: var(--ean-cols-l); }
+  ha-card.orient-portrait .grid { grid-template-columns: var(--ean-cols-p); }
+  .tile { position: relative; display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 10px 12px; border-radius: 12px; cursor: pointer;
     border: 1px solid var(--divider-color); background: none; color: var(--primary-text-color); font-family: inherit; text-align: left;
     transition: border-color .15s ease, background-color .15s ease; }
   .tile:hover { border-color: color-mix(in srgb, var(--ean-c-selected) 60%, var(--divider-color)); }
@@ -443,6 +475,11 @@ const CARD_CSS = `
   .tile.tile-row { grid-column: 1 / -1; }
   .tile:focus-visible { outline: 2px solid var(--ean-c-selected); outline-offset: 1px; }
   .tile-top { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  /* Compact: the controls sit to the right of the name, not under it. */
+  .tile.compact { flex-direction: row; align-items: center; gap: 12px; }
+  .tile.compact .tile-top { flex: 1.5 1 0; }
+  .tile.compact .ctl { flex: 1 1 0; min-width: 96px; padding-right: calc(var(--ean-check_icon-sz) + 4px); }
+  .tile.compact .txt { padding-right: 0; }
   .ctl { display: flex; align-items: center; gap: 6px; min-width: 0; cursor: default; }
   .ctl-btn { flex: none; border: none; background: none; padding: 0; margin: 0; cursor: pointer; line-height: 0; }
   .ctl-btn[data-mute] { color: var(--ean-mute_icon-c); }
@@ -464,7 +501,7 @@ const CARD_CSS = `
   .tile ha-icon.spk-icon { flex: none; --mdc-icon-size: var(--ean-speaker_icon-sz); width: var(--ean-speaker_icon-sz); height: var(--ean-speaker_icon-sz);
     color: var(--ean-speaker_icon-c); }
   .tile.on ha-icon.spk-icon { color: var(--ean-speaker_icon_on-c); }
-  .tile .txt { display: flex; flex-direction: column; min-width: 0; padding-right: 14px; } /* room for the check mark */
+  .tile .txt { display: flex; flex-direction: column; min-width: 0; padding-right: calc(var(--ean-check_icon-sz) - 2px); } /* room for the check mark */
   .tile .name { font-size: var(--ean-name-fs); font-weight: var(--ean-name-fw); color: var(--ean-name-c); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .tile .state { font-size: var(--ean-state-fs); font-weight: var(--ean-state-fw); color: var(--ean-state-c); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .tile .check { position: absolute; top: 4px; right: 6px; line-height: 0; color: var(--ean-check_icon-c); display: none; }
@@ -483,10 +520,9 @@ const CARD_CSS = `
 function rootStyleVars(c) {
   const color = (key) => { const d = COLOR_DEFS.find((x) => x[0] === key); return c[key] || d[4]; };
   const px = (key) => `${Number(cfg(c, key))}px`;
-  const n = Number(cfg(c, 'columns'));
-  const cols = n > 0 ? `repeat(${Math.round(n)}, minmax(0, 1fr))` : 'repeat(auto-fill, minmax(140px, 1fr))';
+  const compact = cfg(c, 'tile_layout') === 'compact';
   return [
-    `--ean-cols:${cols}`,
+    `--ean-cols-l:${gridColumns(cfg(c, 'columns_landscape'), compact)}`, `--ean-cols-p:${gridColumns(cfg(c, 'columns_portrait'), compact)}`,
     `--ean-c-selected:${color('color_selected')}`, `--ean-c-send:${color('color_send')}`,
     ...TEXT_ITEMS.flatMap(([item]) => [`--ean-${item}-fs:${px(`${item}_size`)}`, `--ean-${item}-fw:${Number(cfg(c, `${item}_weight`))}`,
       // '' fallback: only set when chosen, so the card's own per-state colors apply otherwise
@@ -533,7 +569,7 @@ class EasyAnnounceCard extends HTMLElement {
   }
 
   getCardSize() {
-    const cols = Number(this._c('columns')) || 3;
+    const cols = Number(this._c(effectiveOrientation(this._config) === 'portrait' ? 'columns_portrait' : 'columns_landscape')) || 3;
     return 3 + Math.ceil((this._speakers.length || 3) / cols);
   }
 
@@ -573,7 +609,7 @@ class EasyAnnounceCard extends HTMLElement {
     this._speakers = discoverSpeakers(this._hass, c);
     this._spkSig = this._speakerSig();
     root.innerHTML = `<style>${CARD_CSS}</style>
-      <ha-card class="card" style="${esc(rootStyleVars(c))}">
+      <ha-card class="card${['portrait', 'landscape'].includes(this._c('orientation')) ? ` orient-${this._c('orientation')}` : ''}" style="${esc(rootStyleVars(c))}">
         ${title || this._canEditPresets() ? `<div class="head"><span class="title">${esc(title)}</span>${this._manageBtnHtml()}</div>` : ''}
         <div class="presets" data-presets>${this._presetsHtml()}</div>
         ${this._c('show_message_box') ? `<div class="compose">
@@ -582,7 +618,7 @@ class EasyAnnounceCard extends HTMLElement {
           <button class="send" data-send><ha-icon icon="mdi:bullhorn-outline"></ha-icon>Send</button>
         </div>` : ''}
         ${this._c('show_announce_volume') ? `<div class="avol" data-avol-row>
-          <label title="Set every speaker to this volume for the announcement"><input type="checkbox" data-avol-on${v.avolOn ? ' checked' : ''}>Announce at</label>
+          <label title="Set every speaker to this volume for the announcement"><input type="checkbox" data-avol-on${v.avolOn ? ' checked' : ''}>Announce Volume</label>
           <input type="range" data-avol min="5" max="100" step="5" value="${v.avol}" aria-label="Announcement volume"${v.avolOn ? '' : ' disabled'}>
           <span class="avol-val" data-avol-val></span></div>` : ''}
         <div class="spk-head"><span>Speakers</span><span class="count" data-count></span>${this._c('show_select_all')
@@ -637,7 +673,7 @@ class EasyAnnounceCard extends HTMLElement {
           ${k.power ? `<button class="ctl-btn" data-power="${id}" title="Power"><ha-icon icon="mdi:power"></ha-icon></button>` : ''}
           ${k.mute ? `<button class="ctl-btn" data-mute="${id}" title="Mute"><ha-icon icon="mdi:volume-high"></ha-icon></button>` : ''}
           ${k.volume ? `<input type="range" class="vol" data-vol="${id}" min="0" max="100" step="1" aria-label="Volume">` : ''}</div>` : '';
-      return `<div class="tile${s.everywhere === 'row' ? ' tile-row' : ''}" role="button" tabindex="${s.available ? 0 : -1}" data-spk="${id}" title="${id}">
+      return `<div class="tile${s.everywhere === 'row' ? ' tile-row' : ''}${this._c('tile_layout') === 'compact' ? ' compact' : ''}" role="button" tabindex="${s.available ? 0 : -1}" data-spk="${id}" title="${id}">
         <div class="tile-top"><ha-icon class="spk-icon" icon="mdi:speaker"></ha-icon>
         <span class="txt"><span class="name">${esc(s.name)}</span>${showState ? '<span class="state" data-state></span>' : ''}</span></div>
         <span class="check"><ha-icon icon="mdi:check-circle"></ha-icon></span>${ctl}</div>`;
@@ -826,6 +862,13 @@ class EasyAnnounceCard extends HTMLElement {
       count.textContent = tapSend ? 'tap one to announce' : n ? `${n} selected` : 'none selected';
     }
     root.querySelectorAll('[data-all], [data-none]').forEach((b) => { b.disabled = this._c('tap_action') === 'send'; });
+    // The All / None chip that matches the selection is lit.
+    const avail = this._speakers.filter((s) => s.available).length;
+    const nSel = this._visibleSelected().length;
+    const allBtn = root.querySelector('[data-all]');
+    const noneBtn = root.querySelector('[data-none]');
+    if (allBtn) allBtn.classList.toggle('on', avail > 0 && nSel === avail);
+    if (noneBtn) noneBtn.classList.toggle('on', nSel === 0);
     this._patchSend();
   }
 
@@ -1119,11 +1162,12 @@ const EDITOR_CSS = `
 `;
 
 // Settings that show or hide other settings: changing one re-renders the editor.
-const REVEAL_KEYS = new Set(['send_with', 'presets_entity', 'show_message_box', 'speaker_source', 'hide_unavailable', 'tap_action', 'preset_style',
+const REVEAL_KEYS = new Set(['orientation', 'send_with', 'presets_entity', 'show_message_box', 'speaker_source', 'hide_unavailable', 'tap_action', 'preset_style',
   'show_announce_volume', 'restore_volume', 'show_state', 'show_select_all', 'show_mute', 'show_power', 'allow_edit_presets']);
 // Slider readouts that aren't px.
 const SLIDER_FMT = {
-  columns: (n) => (Number(n) ? String(n) : 'Auto'),
+  columns_landscape: (n) => (Number(n) ? String(n) : 'Auto'),
+  columns_portrait: (n) => (Number(n) ? String(n) : 'Auto'),
   announce_volume: (n) => (Number(n) ? `${n}%` : 'Off'),
   restore_after: (n) => (Number(n) ? `${n} s` : 'Auto'),
 };
@@ -1277,6 +1321,7 @@ class EasyAnnounceCardEditor extends HTMLElement {
     return `<p class="eane-hint">The card finds the speakers itself. Tap a speaker on the card to select it.</p>
       ${this._select('speaker_source', 'Find', [['alexa', 'Alexa Media Player speakers'], ['all', 'Every media player']])}
       ${this._check('hide_unavailable', 'Hide offline speakers')}
+      ${this._check('hide_this_device', 'Hide "This Device"', '(the Alexa app on a phone or browser)')}
       ${shown}
       <div class="eane-group">Leave out</div>
       <p class="eane-hint">Matched against the entity ID, the name and the integration. <code>*</code> matches anything:
@@ -1298,7 +1343,16 @@ class EasyAnnounceCardEditor extends HTMLElement {
     return `${this._text('title', 'Title', DEFAULT_TITLE)}
       <p class="eane-hint">Clear the title to hide it.</p>
       <div class="eane-group">Speakers</div>
-      ${this._slider('columns', 'Columns', 0, 6)}
+      ${this._select('tile_layout', 'Tiles', [['stacked', 'Stacked (controls under the name)'], ['compact', 'Compact (controls beside the name)']])}
+      <div class="eane-group">Columns</div>
+      ${this._select('orientation', 'Orientation', [['auto', 'Follow the screen'], ['landscape', 'Always landscape'], ['portrait', 'Always portrait']])}
+      <p class="eane-hint">${this._c('orientation') === 'auto'
+    ? `The card uses the portrait count when the screen is taller than it is wide. This screen is <b>${effectiveOrientation(this._config)}</b> right now.`
+    : `The card always uses the ${esc(this._c('orientation'))} count.`}</p>
+      ${this._slider('columns_landscape', 'Landscape', 0, 6)}
+      ${this._slider('columns_portrait', 'Portrait', 0, 6)}
+      <p class="eane-hint">Auto fits as many columns as there's room for.</p>
+      <div class="eane-group">Tapping</div>
       ${this._select('tap_action', 'Tapping a speaker', [['select', 'Selects it (then press Send)'], ['send', 'Announces on it straight away']])}
       ${this._check('show_state', 'Show what each speaker is doing', '(Idle, Playing · song)')}
       ${this._c('tap_action') === 'select' ? `${this._check('show_select_all', 'All / None buttons')}
@@ -1313,11 +1367,11 @@ class EasyAnnounceCardEditor extends HTMLElement {
       ${this._check('show_mute', 'Mute button')}
       ${this._check('show_power', 'Power button')}
       <div class="eane-group">Announcement volume</div>
-      ${this._check('show_announce_volume', 'Show "Announce at" by the message', '(a switch and a slider)')}
+      ${this._check('show_announce_volume', 'Show "Announce Volume" by the message', '(a switch and a slider)')}
       ${this._c('show_announce_volume') ? `<p class="eane-hint">When it's on, every selected speaker is set to that volume just before the announcement.
         Each browser remembers the last level used.</p>
       ${this._slider('announce_volume', 'Starts at', 0, 100)}
-      <p class="eane-hint">Off: "Announce at" starts switched off.</p>
+      <p class="eane-hint">Off: "Announce Volume" starts switched off.</p>
       ${this._check('restore_volume', 'Put each speaker back to its volume from before the announcement')}
       ${restore ? `${this._slider('restore_after', 'Put back after', 0, 60)}
       <p class="eane-hint">Auto waits about 4 seconds plus the time it takes to say the message. Keep this page open until then:
@@ -1352,7 +1406,7 @@ class EasyAnnounceCardEditor extends HTMLElement {
       ...(presets ? [['look-presets', 'Presets', [this._textStyle('preset', true), ...(edit ? [this._iconStyle('delete_icon')] : [])]]] : []),
       ...(box ? [['look-message', 'Message & Send', [this._textStyle('message', true), ...(edit ? [this._iconStyle('save_icon')] : []),
         this._textStyle('send'), this._iconStyle('send_icon')]]] : []),
-      ...(this._c('show_announce_volume') ? [['look-avol', 'Announce at', [this._textStyle('avol', true), this._textStyle('avol_value')]]] : []),
+      ...(this._c('show_announce_volume') ? [['look-avol', 'Announce Volume', [this._textStyle('avol', true), this._textStyle('avol_value')]]] : []),
       ['look-head', 'Speakers heading', [this._textStyle('section', true), this._textStyle('count'), ...(this._c('show_select_all') ? [this._textStyle('links')] : [])]],
       ['look-tiles', 'Speaker tiles', [this._textStyle('name', true), ...(this._c('show_state') ? [this._textStyle('state')] : []),
         this._iconStyle('speaker_icon'), this._iconStyle('check_icon'),
@@ -1454,7 +1508,7 @@ EasyAnnounceCard._test = {
   BUILD_NUMBER, VERSION, CARD_CSS, EDITOR_CSS, DEFAULTS, COLOR_DEFS, VIEWS,
   normalizeConfig, discoverSpeakers, cleanName, globRe, excluded, readPresets, planOptions, isPlaceholder,
   buildCall, setupProblem, rootStyleVars, colorMode, speakerState, viewKey,
-  TEXT_ITEMS, ICON_ITEMS, tileControls, restoreDelayMs, restoreLevels, scheduleRestore, RESTORES, FEAT,
+  TEXT_ITEMS, ICON_ITEMS, isThisDevice, effectiveOrientation, gridColumns, tileControls, restoreDelayMs, restoreLevels, scheduleRestore, RESTORES, FEAT,
 };
 
 if (!customElements.get(CARD_TAG)) customElements.define(CARD_TAG, EasyAnnounceCard);

@@ -13,22 +13,30 @@ speakers, press **Send**. One call reaches every speaker you picked. History is 
 - **Presets** from an `input_select`, shown as chips or a dropdown. Tap one to put it in the message box.
 - **Save and delete presets from the card** (admins only). The card updates the `input_select` itself.
 - **Speakers found on their own:** every Alexa Media Player speaker, with offline ones hidden or greyed out.
-  Leave some out with patterns (`*Phone*`, `This Device*`), or always add others.
-- **Pick several speakers**, or All / None, and send once. Or set the card to announce as soon as you tap a speaker.
+  "This Device" (the Alexa app) is left out unless you want it. Leave others out with patterns (`*Phone*`,
+  `media_player.*_group`), or always add some.
+- **Pick several speakers**, or tap the All / None chips, and send once. Or set the card to announce as soon as you tap a speaker.
 - Each speaker shows what it's doing (Idle, Paused, Playing · song), with its own **volume slider**, **mute** and
   **power** buttons. Each one can be shown or hidden.
-- **Announce at a set volume:** every selected speaker is set to it just before the announcement, and can be
+- **Announce Volume:** every selected speaker is set to it just before the announcement, and can be
   put back to its earlier volume afterwards.
 - **Sends with Alexa Media Player directly** (`notify.alexa_media`, announce or speak), **or through your own
   script**, so automations and the card announce the same way.
 - Remembers the speakers you picked, in each browser.
+- **Columns per orientation:** one count for landscape and one for portrait. The card follows the screen as it
+  turns, or stays on the orientation you pick.
+- **Stacked or compact tiles:** the volume controls under the speaker's name, or beside it.
 - **Style every piece of text and every icon on its own:** size, weight and color for each text (title, presets,
   message, Send, speaker names, state line, …), size and color for each icon (speaker, check mark, mute, power, …).
 - A visual editor for every setting. Every color can follow your theme or be custom; every size is a slider.
 
-| Light theme, 2 columns | Editing presets |
+| Portrait, 2 columns, light theme | Editing presets |
 |---|---|
 | ![Light theme](screenshots/02-light.png) | ![Editing presets](screenshots/03-edit-presets.png) |
+
+| Compact tiles, 2 columns | Compact tiles, portrait, 1 column |
+|---|---|
+| ![Compact tiles](screenshots/07-compact.png) | ![Compact tiles in portrait](screenshots/08-compact-portrait.png) |
 
 | Styled text and icons | Appearance settings |
 |---|---|
@@ -63,7 +71,6 @@ title: Announcements
 presets_entity: input_select.announcement_presets
 exclude:
   - "*Phone*"
-  - This Device*
 ```
 
 That's enough: the card sends with `notify.alexa_media` and `type: announce`.
@@ -122,16 +129,20 @@ Every option is in the visual editor.
 | `strip_words` | | Words dropped from names, e.g. `Echo` turns "Kitchen Echo" into "Kitchen". |
 | `everywhere_entity` | | Alexa's "Everywhere" group speaker. Empty = the speaker whose entity ID or name contains "everywhere". |
 | `everywhere_position` | `above` | Where it goes: `above` / `below` = its own full-width row above / below the other speakers; `first` / `last` = a normal tile at the start / end of the list. |
-| `columns` | `3` | Speaker columns; `0` fits as many as there's room for. |
+| `hide_this_device` | `true` | Leave out Alexa's "This Device" (the Alexa app on a phone or browser). |
+| `orientation` | `auto` | `auto` follows the screen (portrait when it's taller than wide); `landscape` or `portrait` always uses that count. |
+| `columns_landscape` | `3` | Speaker columns in landscape; `0` fits as many as there's room for. |
+| `columns_portrait` | `2` | Speaker columns in portrait; `0` fits as many as there's room for. |
+| `tile_layout` | `stacked` | `stacked`: volume controls under the name. `compact`: beside it. |
 | `tap_action` | `select` | `select`: tap to select, then Send. `send`: tap a speaker to announce on it straight away. |
 | `show_state` | `true` | What each speaker is doing, under its name. |
-| `show_select_all` | `true` | All / None buttons. |
+| `show_select_all` | `true` | All / None chips. |
 | `remember_selection` | `true` | Remember the selected speakers in this browser. |
 | `show_volume` | `true` | Volume slider on each speaker. |
 | `show_mute` | `true` | Mute button on each speaker. |
 | `show_power` | `false` | Power button on each speaker. |
-| `show_announce_volume` | `true` | The "Announce at" switch and slider by the message. |
-| `announce_volume` | `0` | The level "Announce at" starts at, in %. `0` = starts switched off. |
+| `show_announce_volume` | `true` | The "Announce Volume" switch and slider by the message. |
+| `announce_volume` | `0` | The level "Announce Volume" starts at, in %. `0` = starts switched off. |
 | `restore_volume` | `true` | Put each speaker back to its volume from before the announcement. |
 | `restore_after` | `0` | Seconds to wait before putting the volume back. `0` = about 4 s plus the time it takes to say the message. |
 | `color_selected` | theme primary | The selected-speaker accent (tile border, check mark, All / None). |
@@ -143,18 +154,18 @@ Colors take a theme variable (`var(--accent-color)`), a hex color or any CSS col
 
 | Text (`<text>`) | Size, weight | | Icon (`<icon>`) | Size | Extra color |
 |---|---|---|---|---|---|
-| `title` | 14, 600 | | `edit_icon` (edit presets) | 20 | |
-| `preset` (chips / dropdown) | 14, 400 | | `delete_icon` (on the chips) | 16 | |
-| `message` (message box) | 14, 400 | | `save_icon` (save as preset) | 20 | |
-| `send` (Send button text) | 14, 600 | | `send_icon` | 18 | |
-| `avol` ("Announce at") | 12, 400 | | `speaker_icon` | 24 | `speaker_icon_on_color` (selected) |
-| `avol_value` (volume readout) | 12, 600 | | `check_icon` (selected mark) | 16 | |
-| `section` ("Speakers" heading) | 11, 600 | | `mute_icon` | 18 | `mute_icon_muted_color` (muted) |
-| `count` (selected count) | 11, 500 | | `power_icon` | 18 | `power_icon_on_color` (on) |
-| `links` (All / None) | 12, 600 | | | | |
-| `name` (speaker names) | 13, 500 | | | | |
-| `state` (speaker state) | 11, 400 | | | | |
-| `status` (status line) | 12, 400 | | | | |
+| `title` | 18, 600 | | `edit_icon` (edit presets) | 24 | |
+| `preset` (chips / dropdown) | 16, 400 | | `delete_icon` (on the chips) | 18 | |
+| `message` (message box) | 16, 400 | | `save_icon` (save as preset) | 26 | |
+| `send` (Send button text) | 16, 600 | | `send_icon` | 22 | |
+| `avol` ("Announce Volume") | 14, 400 | | `speaker_icon` | 32 | `speaker_icon_on_color` (selected) |
+| `avol_value` (volume readout) | 14, 600 | | `check_icon` (selected mark) | 20 | |
+| `section` ("Speakers" heading) | 13, 600 | | `mute_icon` | 22 | `mute_icon_muted_color` (muted) |
+| `count` (selected count) | 13, 500 | | `power_icon` | 22 | `power_icon_on_color` (on) |
+| `links` (All / None chips) | 14, 600 | | | | |
+| `name` (speaker names) | 16, 500 | | | | |
+| `state` (speaker state) | 13, 400 | | | | |
+| `status` (status line) | 14, 400 | | | | |
 
 For example `name_weight: 700`, `speaker_icon_color: var(--accent-color)`. The status line keeps its green /
 amber / red unless you give it a color. Cards set up before this build keep their look: `font_size_*`,
@@ -169,7 +180,7 @@ the helper to it keep working.
 
 ### Volume
 
-Volume, mute and power only show on speakers that support them. **Announce at** sets every selected speaker
+Volume, mute and power only show on speakers that support them. **Announce Volume** sets every selected speaker
 to that volume just before announcing; each browser remembers the last level. With `restore_volume`, the
 card puts each speaker back afterwards. Keep the page open until then: the card sends that change itself,
 so closing the page skips it. If you announce again before then, the speakers go back to the volume they
