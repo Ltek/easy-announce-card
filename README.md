@@ -26,6 +26,10 @@ speakers, press **Send**. One call reaches every speaker you picked. History is 
 - **Columns per orientation:** one count for landscape and one for portrait. The card follows the screen as it
   turns, or stays on the orientation you pick.
 - **Stacked or compact tiles:** the volume controls under the speaker's name, or beside it.
+- **Auto columns that fit the names:** every tile is made wide enough for the longest speaker name, then as
+  many columns as fit.
+- **Tile background and border:** colors (normal and selected), width, style and corner radius. The Everywhere
+  tile looks like the others, or gets its own style.
 - **Style every piece of text and every icon on its own:** size, weight and color for each text (title, presets,
   message, Send, speaker names, state line, …), size and color for each icon (speaker, check mark, mute, power, …).
 - A visual editor for every setting. Every color can follow your theme or be custom; every size is a slider.
@@ -37,6 +41,10 @@ speakers, press **Send**. One call reaches every speaker you picked. History is 
 | Compact tiles, 2 columns | Compact tiles, portrait, 1 column |
 |---|---|
 | ![Compact tiles](screenshots/07-compact.png) | ![Compact tiles in portrait](screenshots/08-compact-portrait.png) |
+
+| Auto columns, fitted to the names | Tile and Everywhere styling |
+|---|---|
+| ![Auto columns](screenshots/09-autofit.png) | ![Tile styling](screenshots/11-tile-style.png) |
 
 | Styled text and icons | Appearance settings |
 |---|---|
@@ -134,6 +142,8 @@ Every option is in the visual editor.
 | `columns_landscape` | `3` | Speaker columns in landscape; `0` fits as many as there's room for. |
 | `columns_portrait` | `2` | Speaker columns in portrait; `0` fits as many as there's room for. |
 | `tile_layout` | `stacked` | `stacked`: volume controls under the name. `compact`: beside it. |
+| `auto_fit` | `names` | For a column count of `0`: `names` makes each tile wide enough for the longest speaker name and state; `width` uses `auto_min_width`. |
+| `auto_min_width` | `0` | Minimum tile width in px for `auto_fit: width`. `0` = 150 (260 for compact tiles). |
 | `tap_action` | `select` | `select`: tap to select, then Send. `send`: tap a speaker to announce on it straight away. |
 | `show_state` | `true` | What each speaker is doing, under its name. |
 | `show_select_all` | `true` | All / None chips. |
@@ -147,6 +157,11 @@ Every option is in the visual editor.
 | `restore_after` | `0` | Seconds to wait before putting the volume back. `0` = about 4 s plus the time it takes to say the message. |
 | `color_selected` | theme primary | The selected-speaker accent (tile border, check mark, All / None). |
 | `color_send` | theme primary | Send button background. |
+| `tile_background`, `tile_selected_background` | transparent, a tint of the selected color | Tile background, normal and selected. |
+| `tile_border_color`, `tile_selected_border_color` | theme divider, the selected color | Tile border, normal and selected. |
+| `tile_border_width`, `tile_border_style`, `tile_border_radius` | `1`, `solid`, `12` | Border width (px), style (`solid`, `dashed`, `dotted`, `double`, `none`) and corner radius (px). |
+| `everywhere_style` | `false` | Style the Everywhere tile on its own. |
+| `everywhere_<key>` | same as other tiles | With `everywhere_style`, any tile setting for the Everywhere tile only: the background and border keys above, `name_*`, `state_*`, `speaker_icon_*`, `check_icon_*`, `mute_icon_*` and `power_icon_*`. For example `everywhere_tile_background`, `everywhere_name_size`. |
 | `<text>_size`, `<text>_weight`, `<text>_color` | see below | Each piece of text, on its own. |
 | `<icon>_size`, `<icon>_color` | see below | Each icon, on its own. |
 

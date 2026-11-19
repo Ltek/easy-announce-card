@@ -1,5 +1,18 @@
 # Changelog
 
+## v2026.11.19.6
+
+- **Auto columns fit the names** (`auto_fit: names`, the default for a column count of 0): the card measures
+  every speaker's name and state and makes each tile wide enough to show them in full, then fits as many
+  columns of that width as there's room for. Before, Auto packed tiles at 150 px and cut names off.
+  `auto_fit: width` fits a minimum width instead (`auto_min_width`).
+- **Tile background and border:** background and border colors, each for normal and selected tiles, plus
+  border width, style and corner radius (Appearance → Speaker tiles → Background & border). Every color has
+  the theme / custom / CSS choices.
+- **Everywhere tile style:** it looks like the other tiles unless you check "Style the Everywhere tile on its
+  own" (`everywhere_style`). Then an Everywhere tile section offers every tile setting (background and border,
+  name, state and icons), each starting on "Same as other tiles".
+
 ## v2026.11.19.5
 
 - **Columns per orientation:** `columns_landscape` (default 3) and `columns_portrait` (default 2). With

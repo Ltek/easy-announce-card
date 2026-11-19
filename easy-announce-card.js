@@ -1,5 +1,5 @@
 // Easy Announce Card (Ltek) — Home Assistant Dashboard card for Alexa announcements
-// Version: v2026.11.19.5
+// Version: v2026.11.19.6
 //
 // Type a message (or tap a preset), pick the speakers, press Send. One call reaches every
 // selected speaker:
@@ -30,7 +30,7 @@
 // interpolated into it); per-card values are custom properties set inline on the card root.
 // The card renders once and patches itself on every state change.
 
-const BUILD_NUMBER = 'v2026.11.19.5';
+const BUILD_NUMBER = 'v2026.11.19.6';
 const VERSION = BUILD_NUMBER.slice(1);
 const CARD_TAG = 'easy-announce-card';
 const EDITOR_TAG = 'easy-announce-card-editor';
@@ -65,6 +65,12 @@ const DEFAULTS = {
   columns_portrait: 2,
   orientation: 'auto',
   tile_layout: 'stacked',
+  auto_fit: 'names',
+  auto_min_width: 0,
+  tile_border_width: 1,
+  tile_border_radius: 12,
+  tile_border_style: 'solid',
+  everywhere_style: false,
   hide_this_device: true,
   tap_action: 'select',
   show_state: true,
@@ -130,6 +136,31 @@ const COLOR_DEFS = [
   ...TEXT_ITEMS.map(([item, label, , , unset, seed, fb]) => [`${item}_color`, label, unset, seed, fb]),
   ...ICON_ITEMS.flatMap(([item, label, , unset, seed, fb, on]) => [[`${item}_color`, label, unset, seed, fb], ...(on ? [on] : [])]),
 ];
+// The tile frame: background and border, normal and selected.
+const FRAME_COLORS = [
+  ['tile_background', 'Background', 'Transparent', '#1c1c1c', 'transparent'],
+  ['tile_selected_background', 'Background when selected', 'Tint of the selected color', '#0d3b52',
+    'color-mix(in srgb, var(--ean-c-selected) 15%, transparent)'],
+  ['tile_border_color', 'Border', 'Theme divider', '#444444', 'var(--divider-color)'],
+  ['tile_selected_border_color', 'Border when selected', 'Selected color', '#03a9f4', 'var(--ean-c-selected)'],
+];
+COLOR_DEFS.push(...FRAME_COLORS);
+const BORDER_STYLES = [['solid', 'Solid'], ['dashed', 'Dashed'], ['dotted', 'Dotted'], ['double', 'Double'], ['none', 'None']];
+// What a speaker tile is styled with; the Everywhere tile can override every one of them
+// (everywhere_<key>; unset = the same as the other tiles).
+const TILE_TEXT = ['name', 'state'];
+const TILE_ICONS = ['speaker_icon', 'check_icon', 'mute_icon', 'power_icon'];
+const EW = 'everywhere_';
+for (const d of COLOR_DEFS.filter(([k]) => FRAME_COLORS.some(([f]) => f === k) || TILE_TEXT.some((i) => k === `${i}_color`)
+  || TILE_ICONS.some((i) => k === `${i}_color` || k.startsWith(`${i}_`) && k.endsWith('_color')))) {
+  COLOR_DEFS.push([EW + d[0], d[1], 'Same as other tiles', d[3], '']);
+}
+// Number / choice keys the Everywhere tile can override (colors are in COLOR_DEFS).
+const EW_KEYS = [
+  ...['tile_border_width', 'tile_border_radius', 'tile_border_style'].map((k) => EW + k),
+  ...TILE_TEXT.flatMap((i) => [`${EW}${i}_size`, `${EW}${i}_weight`]),
+  ...TILE_ICONS.map((i) => `${EW}${i}_size`),
+];
 const COLOR_KEYS = COLOR_DEFS.map((d) => d[0]);
 const LIST_KEYS = ['include', 'exclude', 'strip_words'];
 
@@ -147,7 +178,8 @@ function normalizeConfig(raw) {
     for (const k of keys) if (!(k in c) && c[old] !== '' && c[old] != null) c[k] = c[old];
     delete c[old];
   }
-  for (const [item] of TEXT_ITEMS) { const k = `${item}_weight`; if (k in c && c[k] !== '' && c[k] != null) c[k] = Number(c[k]); }
+  for (const k of Object.keys(c)) if (/_weight$/.test(k) && c[k] !== '' && c[k] != null) c[k] = Number(c[k]);
+  for (const k of EW_KEYS) if (k in c && (c[k] === '' || c[k] == null)) delete c[k];
   for (const k of Object.keys(DEFAULTS)) {
     if (!(k in c)) continue;
     if (k === 'title') { if (c.title === null || c.title === DEFAULT_TITLE) delete c.title; continue; } // '' = no title line
@@ -214,11 +246,33 @@ function effectiveOrientation(c) {
   try { return window.matchMedia && window.matchMedia('(orientation: portrait)').matches ? 'portrait' : 'landscape'; } catch (e) { return 'landscape'; }
 }
 
-/** grid-template-columns for a column count (0 = as many as fit). */
-function gridColumns(n, compact) {
+/**
+ * grid-template-columns for a column count. 0 = as many as fit: with auto_fit "names" a tile is at
+ * least as wide as the longest speaker name needs (--ean-fit-w, measured by the card), else at
+ * least auto_min_width px (0 = 150, or 260 for compact tiles). Never wider than the card.
+ */
+function gridColumns(n, c = {}) {
   n = Number(n);
-  return n > 0 ? `repeat(${Math.round(n)}, minmax(0, 1fr))` : `repeat(auto-fill, minmax(${compact ? 260 : 150}px, 1fr))`;
+  if (n > 0) return `repeat(${Math.round(n)}, minmax(0, 1fr))`;
+  const compact = cfg(c, 'tile_layout') === 'compact';
+  const w = Number(cfg(c, 'auto_min_width')) || (compact ? 260 : 150);
+  const min = cfg(c, 'auto_fit') === 'names' ? `var(--ean-fit-w, ${w}px)` : `${w}px`;
+  return `repeat(auto-fill, minmax(min(${min}, 100%), 1fr))`;
 }
+
+// Compact tiles share their width 1.5 : 1 between the name and the controls (see CARD_CSS).
+const COMPACT_NAME_SHARE = 0.6;
+
+/**
+ * The narrowest tile that shows its whole name and state: the tile's padding and border (chrome), the
+ * icon + text it needs (topNeed), and for compact tiles the gap and the controls' minimum width.
+ */
+function tileFitWidth({ chrome, topNeed, compact = false, gap = 0, ctlMin = 0 }) {
+  const inner = compact && ctlMin ? gap + Math.max(topNeed / COMPACT_NAME_SHARE, topNeed + ctlMin) : topNeed;
+  return Math.ceil(chrome + inner) + 2;
+}
+
+const usesNameFit = (c) => cfg(c, 'auto_fit') === 'names' && (!Number(cfg(c, 'columns_landscape')) || !Number(cfg(c, 'columns_portrait')));
 
 function discoverSpeakers(hass, c) {
   if (!hass || !hass.states) return [];
@@ -466,11 +520,11 @@ const CARD_CSS = `
   @media (orientation: portrait) { .grid { grid-template-columns: var(--ean-cols-p); } }
   ha-card.orient-landscape .grid { grid-template-columns: var(--ean-cols-l); }
   ha-card.orient-portrait .grid { grid-template-columns: var(--ean-cols-p); }
-  .tile { position: relative; display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 10px 12px; border-radius: 12px; cursor: pointer;
-    border: 1px solid var(--divider-color); background: none; color: var(--primary-text-color); font-family: inherit; text-align: left;
-    transition: border-color .15s ease, background-color .15s ease; }
-  .tile:hover { border-color: color-mix(in srgb, var(--ean-c-selected) 60%, var(--divider-color)); }
-  .tile.on { border-color: var(--ean-c-selected); background: color-mix(in srgb, var(--ean-c-selected) 15%, transparent); }
+  .tile { position: relative; display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 10px 12px; cursor: pointer;
+    border: var(--ean-tile-bw) var(--ean-tile-bs) var(--ean-tile-bc); border-radius: var(--ean-tile-r); background: var(--ean-tile-bg);
+    color: var(--primary-text-color); font-family: inherit; text-align: left; transition: border-color .15s ease, background-color .15s ease; }
+  .tile:hover { border-color: color-mix(in srgb, var(--ean-c-selected) 60%, var(--ean-tile-bc)); }
+  .tile.on { border-color: var(--ean-tile-bc-on); background: var(--ean-tile-bg-on); }
   .tile.off { opacity: .45; cursor: default; }
   .tile.tile-row { grid-column: 1 / -1; }
   .tile:focus-visible { outline: 2px solid var(--ean-c-selected); outline-offset: 1px; }
@@ -516,13 +570,43 @@ const CARD_CSS = `
   .status.warn { color: var(--ean-status-c, var(--warning-color, #f4b942)); }
 `;
 
+const FRAME_VAR = { tile_background: 'tile-bg', tile_selected_background: 'tile-bg-on', tile_border_color: 'tile-bc', tile_selected_border_color: 'tile-bc-on' };
+const borderStyle = (v) => (BORDER_STYLES.some(([s]) => s === v) ? v : 'solid');
+
+/**
+ * The Everywhere tile's own values, set inline on that tile so they override the card's (only the
+ * ones it sets; the rest follow the other tiles). '' when everywhere_style is off.
+ */
+function everywhereStyleVars(c) {
+  if (!cfg(c, 'everywhere_style')) return '';
+  const has = (k) => c[EW + k] !== undefined && c[EW + k] !== '' && c[EW + k] !== null;
+  const out = [];
+  for (const [k] of FRAME_COLORS) if (has(k)) out.push(`--ean-${FRAME_VAR[k]}:${c[EW + k]}`);
+  if (has('tile_border_width')) out.push(`--ean-tile-bw:${Number(c[EW + 'tile_border_width'])}px`);
+  if (has('tile_border_radius')) out.push(`--ean-tile-r:${Number(c[EW + 'tile_border_radius'])}px`);
+  if (has('tile_border_style')) out.push(`--ean-tile-bs:${borderStyle(c[EW + 'tile_border_style'])}`);
+  for (const i of TILE_TEXT) {
+    if (has(`${i}_size`)) out.push(`--ean-${i}-fs:${Number(c[`${EW}${i}_size`])}px`);
+    if (has(`${i}_weight`)) out.push(`--ean-${i}-fw:${Number(c[`${EW}${i}_weight`])}`);
+    if (has(`${i}_color`)) out.push(`--ean-${i}-c:${c[`${EW}${i}_color`]}`);
+  }
+  for (const i of TILE_ICONS) {
+    const [, , , , , , on] = ICON_ITEMS.find((x) => x[0] === i);
+    if (has(`${i}_size`)) out.push(`--ean-${i}-sz:${Number(c[`${EW}${i}_size`])}px`);
+    if (has(`${i}_color`)) out.push(`--ean-${i}-c:${c[`${EW}${i}_color`]}`);
+    if (on && has(on[0])) out.push(`--ean-${on[0].replace(/_color$/, '')}-c:${c[EW + on[0]]}`);
+  }
+  return out.join(';');
+}
+
 /** The per-card values, as custom properties on the card root (the stylesheet never changes). */
 function rootStyleVars(c) {
   const color = (key) => { const d = COLOR_DEFS.find((x) => x[0] === key); return c[key] || d[4]; };
   const px = (key) => `${Number(cfg(c, key))}px`;
-  const compact = cfg(c, 'tile_layout') === 'compact';
   return [
-    `--ean-cols-l:${gridColumns(cfg(c, 'columns_landscape'), compact)}`, `--ean-cols-p:${gridColumns(cfg(c, 'columns_portrait'), compact)}`,
+    `--ean-cols-l:${gridColumns(cfg(c, 'columns_landscape'), c)}`, `--ean-cols-p:${gridColumns(cfg(c, 'columns_portrait'), c)}`,
+    ...FRAME_COLORS.map(([k]) => `--ean-${FRAME_VAR[k]}:${color(k)}`),
+    `--ean-tile-bw:${px('tile_border_width')}`, `--ean-tile-r:${px('tile_border_radius')}`, `--ean-tile-bs:${borderStyle(cfg(c, 'tile_border_style'))}`,
     `--ean-c-selected:${color('color_selected')}`, `--ean-c-send:${color('color_send')}`,
     ...TEXT_ITEMS.flatMap(([item]) => [`--ean-${item}-fs:${px(`${item}_size`)}`, `--ean-${item}-fw:${Number(cfg(c, `${item}_weight`))}`,
       // '' fallback: only set when chosen, so the card's own per-state colors apply otherwise
@@ -562,6 +646,8 @@ class EasyAnnounceCard extends HTMLElement {
     if (this._throttle) return;
     this._throttle = setTimeout(() => { this._throttle = null; this._update(); }, 250);
   }
+
+  connectedCallback() { if (this._rendered) this._scheduleFit(); }
 
   disconnectedCallback() {
     if (this._throttle) clearTimeout(this._throttle);
@@ -629,6 +715,7 @@ class EasyAnnounceCard extends HTMLElement {
     this._rendered = true;
     this._wire();
     this._patch();
+    this._scheduleFit();
     this._showStatus();
     if (caret) {
       const el = root.querySelector('textarea.msg');
@@ -666,6 +753,7 @@ class EasyAnnounceCard extends HTMLElement {
         : 'No media players found.'}</div>`;
     }
     const showState = this._c('show_state');
+    const ewVars = everywhereStyleVars(this._config);
     return this._speakers.map((s) => {
       const k = tileControls(this._config, s);
       const id = esc(s.id);
@@ -673,7 +761,7 @@ class EasyAnnounceCard extends HTMLElement {
           ${k.power ? `<button class="ctl-btn" data-power="${id}" title="Power"><ha-icon icon="mdi:power"></ha-icon></button>` : ''}
           ${k.mute ? `<button class="ctl-btn" data-mute="${id}" title="Mute"><ha-icon icon="mdi:volume-high"></ha-icon></button>` : ''}
           ${k.volume ? `<input type="range" class="vol" data-vol="${id}" min="0" max="100" step="1" aria-label="Volume">` : ''}</div>` : '';
-      return `<div class="tile${s.everywhere === 'row' ? ' tile-row' : ''}${this._c('tile_layout') === 'compact' ? ' compact' : ''}" role="button" tabindex="${s.available ? 0 : -1}" data-spk="${id}" title="${id}">
+      return `<div class="tile${s.everywhere === 'row' ? ' tile-row' : ''}${this._c('tile_layout') === 'compact' ? ' compact' : ''}" role="button" tabindex="${s.available ? 0 : -1}" data-spk="${id}" title="${id}"${s.everywhere && ewVars ? ` style="${esc(ewVars)}" data-everywhere` : ''}>
         <div class="tile-top"><ha-icon class="spk-icon" icon="mdi:speaker"></ha-icon>
         <span class="txt"><span class="name">${esc(s.name)}</span>${showState ? '<span class="state" data-state></span>' : ''}</span></div>
         <span class="check"><ha-icon icon="mdi:check-circle"></ha-icon></span>${ctl}</div>`;
@@ -681,6 +769,47 @@ class EasyAnnounceCard extends HTMLElement {
   }
 
   _speakerSig() { return speakerSig(this._speakers); }
+
+  /**
+   * auto_fit "names": measure what each tile needs to show its whole name and state, and set the
+   * widest as --ean-fit-w (the auto column minimum). Tiles that span the row are left out. If the card
+   * isn't laid out yet (a hidden tab), try again on the next update.
+   */
+  _fitTiles() {
+    const card = this.shadowRoot.querySelector('ha-card');
+    if (!card) return;
+    if (!usesNameFit(this._config)) { card.style.removeProperty('--ean-fit-w'); this._fitPending = false; return; }
+    const compact = this._c('tile_layout') === 'compact';
+    let widest = 0;
+    let measured = false;
+    for (const tile of this.shadowRoot.querySelectorAll('.tile:not(.tile-row)')) {
+      const top = tile.querySelector('.tile-top');
+      const txt = tile.querySelector('.txt');
+      if (!top || !txt) continue;
+      const tr = top.getBoundingClientRect();
+      const xr = txt.getBoundingClientRect();
+      if (!tr.width) continue;
+      measured = true;
+      const cs = getComputedStyle(tile);
+      const n = (v) => parseFloat(v) || 0;
+      const chrome = n(cs.paddingLeft) + n(cs.paddingRight) + n(cs.borderLeftWidth) + n(cs.borderRightWidth);
+      const textW = Math.max(0, ...[...txt.children].map((e) => e.scrollWidth));
+      const topNeed = (xr.left - tr.left) + textW + n(getComputedStyle(txt).paddingRight);
+      const ctl = tile.querySelector('.ctl');
+      const ctlMin = ctl ? n(getComputedStyle(ctl).minWidth) + n(getComputedStyle(ctl).paddingRight) : 0;
+      widest = Math.max(widest, tileFitWidth({ chrome, topNeed, compact, gap: n(cs.columnGap || cs.gap), ctlMin }));
+    }
+    this._fitPending = !measured;
+    if (measured && widest > 0) card.style.setProperty('--ean-fit-w', `${widest}px`);
+  }
+
+  _scheduleFit() {
+    this._fitPending = true;
+    const run = () => { if (this.isConnected) this._fitTiles(); };
+    (window.requestAnimationFrame || setTimeout)(run);
+    // Web fonts can arrive after the first layout and change the widths.
+    try { if (document.fonts && document.fonts.ready) document.fonts.ready.then(run); } catch (e) { /* no font loading API */ }
+  }
 
   /** Tap / Enter on a tile, and its volume, mute and power controls (which never select the tile). */
   _wireTiles(scope) {
@@ -808,6 +937,7 @@ class EasyAnnounceCard extends HTMLElement {
       if (grid) {
         grid.innerHTML = this._gridHtml();
         this._wireTiles(grid);
+        this._scheduleFit();
       }
     }
     const p = readPresets(this._hass, this._config);
@@ -821,6 +951,7 @@ class EasyAnnounceCard extends HTMLElement {
 
   /** Patch everything state-driven in place: tiles, the selected count, the Send button. */
   _patch() {
+    if (this._fitPending && this._rendered) this._fitTiles();
     const h = this._hass;
     const root = this.shadowRoot;
     const sel = this._view.selected;
@@ -1162,7 +1293,7 @@ const EDITOR_CSS = `
 `;
 
 // Settings that show or hide other settings: changing one re-renders the editor.
-const REVEAL_KEYS = new Set(['orientation', 'send_with', 'presets_entity', 'show_message_box', 'speaker_source', 'hide_unavailable', 'tap_action', 'preset_style',
+const REVEAL_KEYS = new Set(['orientation', 'auto_fit', 'everywhere_style', 'tile_layout', 'send_with', 'presets_entity', 'show_message_box', 'speaker_source', 'hide_unavailable', 'tap_action', 'preset_style',
   'show_announce_volume', 'restore_volume', 'show_state', 'show_select_all', 'show_mute', 'show_power', 'allow_edit_presets']);
 // Slider readouts that aren't px.
 const SLIDER_FMT = {
@@ -1170,6 +1301,7 @@ const SLIDER_FMT = {
   columns_portrait: (n) => (Number(n) ? String(n) : 'Auto'),
   announce_volume: (n) => (Number(n) ? `${n}%` : 'Off'),
   restore_after: (n) => (Number(n) ? `${n} s` : 'Auto'),
+  auto_min_width: (n) => (Number(n) ? `${n}px` : 'Default'),
 };
 const fmtSlider = (key, n) => (SLIDER_FMT[key] ? SLIDER_FMT[key](n) : `${n}px`);
 
@@ -1333,6 +1465,7 @@ class EasyAnnounceCardEditor extends HTMLElement {
       <div class="eane-group">Everywhere</div>
       <p class="eane-hint">Alexa's "Everywhere" group speaker. Found by its name; pick it here if yours has another name.</p>
       ${this._text('everywhere_entity', 'Everywhere speaker', 'found by name', 'eane-players')}
+      <p class="eane-hint">Its look: Appearance → Speaker tiles → Everywhere tile.</p>
       ${this._select('everywhere_position', 'Place it', [['above', 'Own row above the speakers'], ['below', 'Own row below the speakers'], ['first', 'First in the list'], ['last', 'Last in the list']])}
       <div class="eane-group">Names</div>
       <p class="eane-hint">Words to drop from speaker names ("Kitchen Echo" → "Kitchen" without "Echo").</p>
@@ -1351,7 +1484,13 @@ class EasyAnnounceCardEditor extends HTMLElement {
     : `The card always uses the ${esc(this._c('orientation'))} count.`}</p>
       ${this._slider('columns_landscape', 'Landscape', 0, 6)}
       ${this._slider('columns_portrait', 'Portrait', 0, 6)}
-      <p class="eane-hint">Auto fits as many columns as there's room for.</p>
+      ${!Number(this._c('columns_landscape')) || !Number(this._c('columns_portrait')) ? `
+      ${this._select('auto_fit', 'Auto columns', [['names', 'Fit the longest speaker name'], ['width', 'Fit a minimum tile width']])}
+      <p class="eane-hint">${this._c('auto_fit') === 'names'
+    ? 'Auto makes every tile wide enough to show the longest speaker name and state in full, then fits as many columns of that width as there\'s room for.'
+    : 'Auto fits as many columns as there\'s room for, each at least this wide.'}</p>
+      ${this._c('auto_fit') === 'width' ? this._slider('auto_min_width', 'Minimum width', 0, 400) : ''}`
+    : '<p class="eane-hint">Set a count to 0 (Auto) to fit as many columns as there\'s room for.</p>'}
       <div class="eane-group">Tapping</div>
       ${this._select('tap_action', 'Tapping a speaker', [['select', 'Selects it (then press Send)'], ['send', 'Announces on it straight away']])}
       ${this._check('show_state', 'Show what each speaker is doing', '(Idle, Playing · song)')}
@@ -1376,6 +1515,52 @@ class EasyAnnounceCardEditor extends HTMLElement {
       ${restore ? `${this._slider('restore_after', 'Put back after', 0, 60)}
       <p class="eane-hint">Auto waits about 4 seconds plus the time it takes to say the message. Keep this page open until then:
         the card sends the change, so closing the page skips it.</p>` : ''}` : ''}`;
+  }
+
+  /** A size slider for an Everywhere override: unset shows the other tiles' value and says "Same". */
+  _ovSlider(key, baseKey, label, min, max) {
+    const set = this._config[key] !== undefined;
+    const v = set ? Number(this._config[key]) : Number(this._c(baseKey));
+    return `<div class="eane-row eane-nowrap"><label class="lbl">${label}</label>
+      <input type="range" data-skey="${key}" min="${min}" max="${max}" step="1" value="${v}">
+      <span class="eane-val" data-val="${key}" title="${set ? '' : 'Same as other tiles'}">${set ? `${v}px` : 'Same'}</span>
+      ${set ? `<button class="eane-reset" data-reset="${key}" title="Same as other tiles"><ha-icon icon="mdi:restore"></ha-icon></button>` : ''}</div>`;
+  }
+
+  /** A choice for an Everywhere override, starting with "Same as other tiles" (unset). */
+  _ovSelect(key, label, options) {
+    const cur = this._config[key] === undefined ? '' : String(this._config[key]);
+    return `<div class="eane-row"><label class="lbl">${label}</label><select data-key="${key}">${
+      [['', 'Same as other tiles'], ...options].map(([v, n]) => `<option value="${esc(v)}"${String(v) === cur ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select></div>`;
+  }
+
+  /** Background and border of the tiles (prefix '') or of the Everywhere tile (prefix everywhere_). */
+  _frameStyle(prefix = '', first = false) {
+    const ov = !!prefix;
+    const size = (k, label, max) => (ov ? this._ovSlider(prefix + k, k, label, 0, max) : this._slider(k, label, 0, max));
+    const styles = ov ? BORDER_STYLES : BORDER_STYLES.map(([v, n]) => [v, v === DEFAULTS.tile_border_style ? `${n} (default)` : n]);
+    return `<div class="eane-group${first ? ' first' : ''}">Background &amp; border</div>
+      ${FRAME_COLORS.map(([k]) => this._colorControl(prefix + k)).join('')}
+      ${size('tile_border_width', 'Border width', 8)}
+      ${ov ? this._ovSelect(prefix + 'tile_border_style', 'Border style', styles) : this._select('tile_border_style', 'Border style', styles)}
+      ${size('tile_border_radius', 'Corner radius', 32)}`;
+  }
+
+  /** The Everywhere tile's text and icons: the same settings as the other tiles, each one "Same" until set. */
+  _ovTextStyle(item) {
+    const [, label] = TEXT_ITEMS.find((x) => x[0] === item);
+    return `<div class="eane-group">${label}</div>
+      ${this._ovSlider(`${EW}${item}_size`, `${item}_size`, 'Size', 8, 40)}
+      ${this._ovSelect(`${EW}${item}_weight`, 'Weight', WEIGHTS)}
+      ${this._colorControl(`${EW}${item}_color`, 'Color')}`;
+  }
+
+  _ovIconStyle(item) {
+    const [, label, , , , , on] = ICON_ITEMS.find((x) => x[0] === item);
+    return `<div class="eane-group">${label}</div>
+      ${this._ovSlider(`${EW}${item}_size`, `${item}_size`, 'Size', 10, 64)}
+      ${this._colorControl(`${EW}${item}_color`, 'Color')}
+      ${on ? this._colorControl(EW + on[0], on[1]) : ''}`;
   }
 
   /** Size, weight and color for one piece of text, under its own group subtitle. */
@@ -1408,9 +1593,20 @@ class EasyAnnounceCardEditor extends HTMLElement {
         this._textStyle('send'), this._iconStyle('send_icon')]]] : []),
       ...(this._c('show_announce_volume') ? [['look-avol', 'Announce Volume', [this._textStyle('avol', true), this._textStyle('avol_value')]]] : []),
       ['look-head', 'Speakers heading', [this._textStyle('section', true), this._textStyle('count'), ...(this._c('show_select_all') ? [this._textStyle('links')] : [])]],
-      ['look-tiles', 'Speaker tiles', [this._textStyle('name', true), ...(this._c('show_state') ? [this._textStyle('state')] : []),
+      ['look-tiles', 'Speaker tiles', [this._frameStyle('', true), this._textStyle('name'), ...(this._c('show_state') ? [this._textStyle('state')] : []),
         this._iconStyle('speaker_icon'), this._iconStyle('check_icon'),
-        ...(this._c('show_mute') ? [this._iconStyle('mute_icon')] : []), ...(this._c('show_power') ? [this._iconStyle('power_icon')] : [])]],
+        ...(this._c('show_mute') ? [this._iconStyle('mute_icon')] : []), ...(this._c('show_power') ? [this._iconStyle('power_icon')] : []),
+        `<div class="eane-group">Everywhere tile</div>
+        ${this._check('everywhere_style', 'Style the Everywhere tile on its own')}
+        <p class="eane-hint">${this._c('everywhere_style')
+    ? 'Its settings are in <b>Everywhere tile</b>, below. Anything left on "Same as other tiles" follows these settings.'
+    : 'Off: the Everywhere tile looks like the other tiles.'}</p>`]],
+      ...(this._c('everywhere_style') ? [['look-everywhere', 'Everywhere tile', [
+        `<p class="eane-hint">Only the Everywhere speaker${this._hass && !discoverSpeakers(this._hass, this._config).some((s) => s.everywhere)
+          ? ' (none found yet: set it in Speakers → Everywhere)' : ''}. "Same as other tiles" follows Speaker tiles.</p>`,
+        this._frameStyle(EW, true), this._ovTextStyle('name'), ...(this._c('show_state') ? [this._ovTextStyle('state')] : []),
+        this._ovIconStyle('speaker_icon'), this._ovIconStyle('check_icon'),
+        ...(this._c('show_mute') ? [this._ovIconStyle('mute_icon')] : []), ...(this._c('show_power') ? [this._ovIconStyle('power_icon')] : [])]]] : []),
       ['look-status', 'Status line', [this._textStyle('status', true)]],
     ];
     return `<p class="eane-hint">Every piece of text has its own size, weight and color; every icon its own size and color.
@@ -1453,7 +1649,7 @@ class EasyAnnounceCardEditor extends HTMLElement {
     }));
     all('[data-key]', (el) => el.addEventListener('change', () => {
       const key = el.dataset.key;
-      this._set(key, el.type === 'checkbox' ? el.checked : /_weight$/.test(key) ? Number(el.value) : el.value.trim());
+      this._set(key, el.type === 'checkbox' ? el.checked : /_weight$/.test(key) && el.value !== '' ? Number(el.value) : el.value.trim());
       if (REVEAL_KEYS.has(key) || key === 'script' || key === 'notify_service' || key === 'announce_type') this._render();
     }));
     all('[data-skey]', (el) => {
@@ -1508,7 +1704,7 @@ EasyAnnounceCard._test = {
   BUILD_NUMBER, VERSION, CARD_CSS, EDITOR_CSS, DEFAULTS, COLOR_DEFS, VIEWS,
   normalizeConfig, discoverSpeakers, cleanName, globRe, excluded, readPresets, planOptions, isPlaceholder,
   buildCall, setupProblem, rootStyleVars, colorMode, speakerState, viewKey,
-  TEXT_ITEMS, ICON_ITEMS, isThisDevice, effectiveOrientation, gridColumns, tileControls, restoreDelayMs, restoreLevels, scheduleRestore, RESTORES, FEAT,
+  TEXT_ITEMS, ICON_ITEMS, FRAME_COLORS, EW_KEYS, everywhereStyleVars, tileFitWidth, usesNameFit, isThisDevice, effectiveOrientation, gridColumns, tileControls, restoreDelayMs, restoreLevels, scheduleRestore, RESTORES, FEAT,
 };
 
 if (!customElements.get(CARD_TAG)) customElements.define(CARD_TAG, EasyAnnounceCard);
