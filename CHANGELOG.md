@@ -1,5 +1,18 @@
 # Changelog
 
+## v2026.11.19.7
+
+- **Everywhere tile settings are easy to find:** Appearance always has an **Everywhere tile** sub-panel, with
+  "Style the Everywhere tile on its own" inside it. Its settings show once that's checked.
+- **Editor panels start closed, and opening one closes the others** at its level (panels, and sub-panels
+  inside a panel).
+- **Longer sliders on compact tiles:** the name column is as wide as the longest speaker name, so every
+  slider starts at the same place and takes the rest of the tile.
+- **Volume value on each speaker** (`show_volume_value`, on by default): e.g. 35% beside the slider, following
+  it while you drag. Styled on its own in Appearance (Speaker volume value), for the Everywhere tile too.
+- **Power button in the tile's top right corner**, out of the controls row, so the slider gets that room. The
+  selected check mark moved onto the speaker icon as a badge.
+
 ## v2026.11.19.6
 
 - **Auto columns fit the names** (`auto_fit: names`, the default for a column count of 0): the card measures

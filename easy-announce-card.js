@@ -1,5 +1,5 @@
 // Easy Announce Card (Ltek) — Home Assistant Dashboard card for Alexa announcements
-// Version: v2026.11.19.6
+// Version: v2026.11.19.7
 //
 // Type a message (or tap a preset), pick the speakers, press Send. One call reaches every
 // selected speaker:
@@ -30,7 +30,7 @@
 // interpolated into it); per-card values are custom properties set inline on the card root.
 // The card renders once and patches itself on every state change.
 
-const BUILD_NUMBER = 'v2026.11.19.6';
+const BUILD_NUMBER = 'v2026.11.19.7';
 const VERSION = BUILD_NUMBER.slice(1);
 const CARD_TAG = 'easy-announce-card';
 const EDITOR_TAG = 'easy-announce-card-editor';
@@ -79,6 +79,7 @@ const DEFAULTS = {
   everywhere_position: 'above',
   remember_selection: true,
   show_volume: true,
+  show_volume_value: true,
   show_mute: true,
   show_power: false,
   show_announce_volume: true,
@@ -103,6 +104,7 @@ const TEXT_ITEMS = [
   ['links', 'All / None', 14, 600, 'Selected color', '#03a9f4', 'var(--ean-c-selected)'],
   ['name', 'Speaker names', 16, 500, ...TXT],
   ['state', 'Speaker state', 13, 400, ...SEC],
+  ['vol_value', 'Speaker volume value', 13, 600, ...SEC],
   ['status', 'Status line', 14, 400, 'By result (green / amber / red)', '#9e9e9e', ''],
 ];
 // Every icon, styled on its own: <item>_size (px), <item>_color, plus a color for its "on" state where it has one.
@@ -148,7 +150,7 @@ COLOR_DEFS.push(...FRAME_COLORS);
 const BORDER_STYLES = [['solid', 'Solid'], ['dashed', 'Dashed'], ['dotted', 'Dotted'], ['double', 'Double'], ['none', 'None']];
 // What a speaker tile is styled with; the Everywhere tile can override every one of them
 // (everywhere_<key>; unset = the same as the other tiles).
-const TILE_TEXT = ['name', 'state'];
+const TILE_TEXT = ['name', 'state', 'vol_value'];
 const TILE_ICONS = ['speaker_icon', 'check_icon', 'mute_icon', 'power_icon'];
 const EW = 'everywhere_';
 for (const d of COLOR_DEFS.filter(([k]) => FRAME_COLORS.some(([f]) => f === k) || TILE_TEXT.some((i) => k === `${i}_color`)
@@ -260,15 +262,12 @@ function gridColumns(n, c = {}) {
   return `repeat(auto-fill, minmax(min(${min}, 100%), 1fr))`;
 }
 
-// Compact tiles share their width 1.5 : 1 between the name and the controls (see CARD_CSS).
-const COMPACT_NAME_SHARE = 0.6;
-
 /**
  * The narrowest tile that shows its whole name and state: the tile's padding and border (chrome), the
  * icon + text it needs (topNeed), and for compact tiles the gap and the controls' minimum width.
  */
 function tileFitWidth({ chrome, topNeed, compact = false, gap = 0, ctlMin = 0 }) {
-  const inner = compact && ctlMin ? gap + Math.max(topNeed / COMPACT_NAME_SHARE, topNeed + ctlMin) : topNeed;
+  const inner = compact && ctlMin ? topNeed + gap + ctlMin : topNeed;
   return Math.ceil(chrome + inner) + 2;
 }
 
@@ -529,11 +528,21 @@ const CARD_CSS = `
   .tile.tile-row { grid-column: 1 / -1; }
   .tile:focus-visible { outline: 2px solid var(--ean-c-selected); outline-offset: 1px; }
   .tile-top { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .spk-wrap { position: relative; flex: none; display: inline-flex; line-height: 0; }
   /* Compact: the controls sit to the right of the name, not under it. */
   .tile.compact { flex-direction: row; align-items: center; gap: 12px; }
-  .tile.compact .tile-top { flex: 1.5 1 0; }
-  .tile.compact .ctl { flex: 1 1 0; min-width: 96px; padding-right: calc(var(--ean-check_icon-sz) + 4px); }
-  .tile.compact .txt { padding-right: 0; }
+  /* The name column is as wide as the longest name (--ean-name-w, measured), so every slider starts at
+     the same place and takes the rest of the tile. */
+  .tile.compact .tile-top { flex: 0 1 var(--ean-name-w, auto); }
+  .tile.compact.tile-row .tile-top { flex: 0 1 auto; }
+  .tile.compact .ctl { flex: 1 1 0; min-width: 150px; }
+  .tile.compact.has-power .ctl { padding-right: calc(var(--ean-power_icon-sz) + 6px); }
+  .tile.compact .txt, .tile.compact.has-power .txt { padding-right: 0; }
+  /* Power sits in the tile's top right corner. */
+  .tile .tile-power { position: absolute; top: 8px; right: 10px; }
+  .tile.compact .tile-power { top: 50%; transform: translateY(-50%); }
+  .vol-val { flex: none; min-width: 2.7em; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap;
+    font-size: var(--ean-vol_value-fs); font-weight: var(--ean-vol_value-fw); color: var(--ean-vol_value-c); }
   .ctl { display: flex; align-items: center; gap: 6px; min-width: 0; cursor: default; }
   .ctl-btn { flex: none; border: none; background: none; padding: 0; margin: 0; cursor: pointer; line-height: 0; }
   .ctl-btn[data-mute] { color: var(--ean-mute_icon-c); }
@@ -555,10 +564,13 @@ const CARD_CSS = `
   .tile ha-icon.spk-icon { flex: none; --mdc-icon-size: var(--ean-speaker_icon-sz); width: var(--ean-speaker_icon-sz); height: var(--ean-speaker_icon-sz);
     color: var(--ean-speaker_icon-c); }
   .tile.on ha-icon.spk-icon { color: var(--ean-speaker_icon_on-c); }
-  .tile .txt { display: flex; flex-direction: column; min-width: 0; padding-right: calc(var(--ean-check_icon-sz) - 2px); } /* room for the check mark */
+  .tile .txt { display: flex; flex-direction: column; min-width: 0; }
+  .tile.has-power .txt { padding-right: calc(var(--ean-power_icon-sz) + 4px); } /* room for the power button */
   .tile .name { font-size: var(--ean-name-fs); font-weight: var(--ean-name-fw); color: var(--ean-name-c); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .tile .state { font-size: var(--ean-state-fs); font-weight: var(--ean-state-fw); color: var(--ean-state-c); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .tile .check { position: absolute; top: 4px; right: 6px; line-height: 0; color: var(--ean-check_icon-c); display: none; }
+  /* The check mark is a badge on the speaker icon's corner. */
+  .tile .check { position: absolute; right: calc(var(--ean-check_icon-sz) / -3); bottom: calc(var(--ean-check_icon-sz) / -4); line-height: 0;
+    color: var(--ean-check_icon-c); display: none; border-radius: 50%; background: var(--ha-card-background, var(--card-background-color, #1c1c1c)); }
   .tile .check ha-icon { --mdc-icon-size: var(--ean-check_icon-sz); width: var(--ean-check_icon-sz); height: var(--ean-check_icon-sz); }
   .tile.on .check { display: block; }
   .empty { color: var(--secondary-text-color); font-size: 13px; }
@@ -757,14 +769,16 @@ class EasyAnnounceCard extends HTMLElement {
     return this._speakers.map((s) => {
       const k = tileControls(this._config, s);
       const id = esc(s.id);
-      const ctl = k.volume || k.mute || k.power ? `<div class="ctl" data-ctl>
-          ${k.power ? `<button class="ctl-btn" data-power="${id}" title="Power"><ha-icon icon="mdi:power"></ha-icon></button>` : ''}
+      const ctl = k.volume || k.mute ? `<div class="ctl" data-ctl>
           ${k.mute ? `<button class="ctl-btn" data-mute="${id}" title="Mute"><ha-icon icon="mdi:volume-high"></ha-icon></button>` : ''}
-          ${k.volume ? `<input type="range" class="vol" data-vol="${id}" min="0" max="100" step="1" aria-label="Volume">` : ''}</div>` : '';
-      return `<div class="tile${s.everywhere === 'row' ? ' tile-row' : ''}${this._c('tile_layout') === 'compact' ? ' compact' : ''}" role="button" tabindex="${s.available ? 0 : -1}" data-spk="${id}" title="${id}"${s.everywhere && ewVars ? ` style="${esc(ewVars)}" data-everywhere` : ''}>
-        <div class="tile-top"><ha-icon class="spk-icon" icon="mdi:speaker"></ha-icon>
+          ${k.volume ? `<input type="range" class="vol" data-vol="${id}" min="0" max="100" step="1" aria-label="Volume">` : ''}
+          ${k.volume && this._c('show_volume_value') ? `<span class="vol-val" data-vol-val></span>` : ''}</div>` : '';
+      // data-ctl: tapping the power button never selects the tile.
+      const power = k.power ? `<button class="ctl-btn tile-power" data-ctl data-power="${id}" title="Power"><ha-icon icon="mdi:power"></ha-icon></button>` : '';
+      return `<div class="tile${s.everywhere === 'row' ? ' tile-row' : ''}${this._c('tile_layout') === 'compact' ? ' compact' : ''}${k.power ? ' has-power' : ''}" role="button" tabindex="${s.available ? 0 : -1}" data-spk="${id}" title="${id}"${s.everywhere && ewVars ? ` style="${esc(ewVars)}" data-everywhere` : ''}>
+        <div class="tile-top"><span class="spk-wrap"><ha-icon class="spk-icon" icon="mdi:speaker"></ha-icon><span class="check"><ha-icon icon="mdi:check-circle"></ha-icon></span></span>
         <span class="txt"><span class="name">${esc(s.name)}</span>${showState ? '<span class="state" data-state></span>' : ''}</span></div>
-        <span class="check"><ha-icon icon="mdi:check-circle"></ha-icon></span>${ctl}</div>`;
+        ${ctl}${power}</div>`;
     }).join('');
   }
 
@@ -772,15 +786,20 @@ class EasyAnnounceCard extends HTMLElement {
 
   /**
    * auto_fit "names": measure what each tile needs to show its whole name and state, and set the
-   * widest as --ean-fit-w (the auto column minimum). Tiles that span the row are left out. If the card
+   * widest as --ean-fit-w (the auto column minimum). Compact tiles: the longest name's width as
+   * --ean-name-w (the name column), so the sliders line up and take the rest of the tile. Tiles that span the row are left out. If the card
    * isn't laid out yet (a hidden tab), try again on the next update.
    */
   _fitTiles() {
     const card = this.shadowRoot.querySelector('ha-card');
     if (!card) return;
-    if (!usesNameFit(this._config)) { card.style.removeProperty('--ean-fit-w'); this._fitPending = false; return; }
+    const fit = usesNameFit(this._config);
     const compact = this._c('tile_layout') === 'compact';
+    if (!fit) card.style.removeProperty('--ean-fit-w');
+    if (!compact) card.style.removeProperty('--ean-name-w');
+    if (!fit && !compact) { this._fitPending = false; return; }
     let widest = 0;
+    let nameW = 0;
     let measured = false;
     for (const tile of this.shadowRoot.querySelectorAll('.tile:not(.tile-row)')) {
       const top = tile.querySelector('.tile-top');
@@ -795,12 +814,15 @@ class EasyAnnounceCard extends HTMLElement {
       const chrome = n(cs.paddingLeft) + n(cs.paddingRight) + n(cs.borderLeftWidth) + n(cs.borderRightWidth);
       const textW = Math.max(0, ...[...txt.children].map((e) => e.scrollWidth));
       const topNeed = (xr.left - tr.left) + textW + n(getComputedStyle(txt).paddingRight);
+      nameW = Math.max(nameW, topNeed);
       const ctl = tile.querySelector('.ctl');
       const ctlMin = ctl ? n(getComputedStyle(ctl).minWidth) + n(getComputedStyle(ctl).paddingRight) : 0;
       widest = Math.max(widest, tileFitWidth({ chrome, topNeed, compact, gap: n(cs.columnGap || cs.gap), ctlMin }));
     }
     this._fitPending = !measured;
-    if (measured && widest > 0) card.style.setProperty('--ean-fit-w', `${widest}px`);
+    if (measured && fit && widest > 0) card.style.setProperty('--ean-fit-w', `${widest}px`);
+    // Compact: the name column of every tile is as wide as the longest name, so the sliders line up.
+    if (measured && compact && nameW > 0) card.style.setProperty('--ean-name-w', `${Math.ceil(nameW) + 1}px`);
   }
 
   _scheduleFit() {
@@ -821,7 +843,11 @@ class EasyAnnounceCard extends HTMLElement {
     });
     scope.querySelectorAll('[data-vol]').forEach((el) => {
       el.addEventListener('pointerdown', () => { el._dragging = true; });
-      el.addEventListener('input', () => { el._dragging = true; });
+      el.addEventListener('input', () => {
+        el._dragging = true;
+        const out = el.parentElement && el.parentElement.querySelector('[data-vol-val]');
+        if (out) out.textContent = `${el.value}%`;
+      });
       el.addEventListener('change', () => {
         el._dragging = false;
         this._hass.callService('media_player', 'volume_set', { entity_id: el.dataset.vol, volume_level: Number(el.value) / 100 })
@@ -973,6 +999,8 @@ class EasyAnnounceCard extends HTMLElement {
         const pct = typeof a.volume_level === 'number' ? String(Math.round(a.volume_level * 100)) : '0';
         if (vol.value !== pct) vol.value = pct;
         vol.title = typeof a.volume_level === 'number' ? `Volume ${pct}%` : 'Volume';
+        const out = el.querySelector('[data-vol-val]');
+        if (out) { const txt = typeof a.volume_level === 'number' ? `${pct}%` : '–'; if (out.textContent !== txt) out.textContent = txt; }
       }
       const mute = el.querySelector('[data-mute]');
       if (mute) {
@@ -1293,7 +1321,7 @@ const EDITOR_CSS = `
 `;
 
 // Settings that show or hide other settings: changing one re-renders the editor.
-const REVEAL_KEYS = new Set(['orientation', 'auto_fit', 'everywhere_style', 'tile_layout', 'send_with', 'presets_entity', 'show_message_box', 'speaker_source', 'hide_unavailable', 'tap_action', 'preset_style',
+const REVEAL_KEYS = new Set(['show_volume', 'show_volume_value', 'orientation', 'auto_fit', 'everywhere_style', 'tile_layout', 'send_with', 'presets_entity', 'show_message_box', 'speaker_source', 'hide_unavailable', 'tap_action', 'preset_style',
   'show_announce_volume', 'restore_volume', 'show_state', 'show_select_all', 'show_mute', 'show_power', 'allow_edit_presets']);
 // Slider readouts that aren't px.
 const SLIDER_FMT = {
@@ -1309,7 +1337,7 @@ class EasyAnnounceCardEditor extends HTMLElement {
   constructor() {
     super();
     this._config = {};
-    this._open = new Set(['sending']);
+    this._open = new Set(); // every panel starts closed
     this._rendered = false;
     this._cmode = {}; // color key → mode chosen this session (keeps an empty Custom CSS field visible)
   }
@@ -1465,7 +1493,7 @@ class EasyAnnounceCardEditor extends HTMLElement {
       <div class="eane-group">Everywhere</div>
       <p class="eane-hint">Alexa's "Everywhere" group speaker. Found by its name; pick it here if yours has another name.</p>
       ${this._text('everywhere_entity', 'Everywhere speaker', 'found by name', 'eane-players')}
-      <p class="eane-hint">Its look: Appearance → Speaker tiles → Everywhere tile.</p>
+      <p class="eane-hint">Its look: Appearance → Everywhere tile.</p>
       ${this._select('everywhere_position', 'Place it', [['above', 'Own row above the speakers'], ['below', 'Own row below the speakers'], ['first', 'First in the list'], ['last', 'Last in the list']])}
       <div class="eane-group">Names</div>
       <p class="eane-hint">Words to drop from speaker names ("Kitchen Echo" → "Kitchen" without "Echo").</p>
@@ -1503,6 +1531,7 @@ class EasyAnnounceCardEditor extends HTMLElement {
     return `<p class="eane-hint">Controls on each speaker. Each one only shows on speakers that support it.</p>
       <div class="eane-group first">On each speaker</div>
       ${this._check('show_volume', 'Volume slider')}
+      ${this._c('show_volume') ? this._check('show_volume_value', 'Volume value', '(35% beside the slider)') : ''}
       ${this._check('show_mute', 'Mute button')}
       ${this._check('show_power', 'Power button')}
       <div class="eane-group">Announcement volume</div>
@@ -1595,18 +1624,19 @@ class EasyAnnounceCardEditor extends HTMLElement {
       ['look-head', 'Speakers heading', [this._textStyle('section', true), this._textStyle('count'), ...(this._c('show_select_all') ? [this._textStyle('links')] : [])]],
       ['look-tiles', 'Speaker tiles', [this._frameStyle('', true), this._textStyle('name'), ...(this._c('show_state') ? [this._textStyle('state')] : []),
         this._iconStyle('speaker_icon'), this._iconStyle('check_icon'),
-        ...(this._c('show_mute') ? [this._iconStyle('mute_icon')] : []), ...(this._c('show_power') ? [this._iconStyle('power_icon')] : []),
-        `<div class="eane-group">Everywhere tile</div>
-        ${this._check('everywhere_style', 'Style the Everywhere tile on its own')}
-        <p class="eane-hint">${this._c('everywhere_style')
-    ? 'Its settings are in <b>Everywhere tile</b>, below. Anything left on "Same as other tiles" follows these settings.'
-    : 'Off: the Everywhere tile looks like the other tiles.'}</p>`]],
-      ...(this._c('everywhere_style') ? [['look-everywhere', 'Everywhere tile', [
-        `<p class="eane-hint">Only the Everywhere speaker${this._hass && !discoverSpeakers(this._hass, this._config).some((s) => s.everywhere)
-          ? ' (none found yet: set it in Speakers → Everywhere)' : ''}. "Same as other tiles" follows Speaker tiles.</p>`,
-        this._frameStyle(EW, true), this._ovTextStyle('name'), ...(this._c('show_state') ? [this._ovTextStyle('state')] : []),
-        this._ovIconStyle('speaker_icon'), this._ovIconStyle('check_icon'),
-        ...(this._c('show_mute') ? [this._ovIconStyle('mute_icon')] : []), ...(this._c('show_power') ? [this._ovIconStyle('power_icon')] : [])]]] : []),
+        ...(this._c('show_volume') && this._c('show_volume_value') ? [this._textStyle('vol_value')] : []),
+        ...(this._c('show_mute') ? [this._iconStyle('mute_icon')] : []), ...(this._c('show_power') ? [this._iconStyle('power_icon')] : [])]],
+      ['look-everywhere', 'Everywhere tile', [
+        `<p class="eane-hint">Alexa's Everywhere speaker${this._hass && !discoverSpeakers(this._hass, this._config).some((s) => s.everywhere)
+          ? ' (none found yet: set it in Speakers → Everywhere)' : ''}.</p>`,
+        this._check('everywhere_style', 'Style the Everywhere tile on its own'),
+        ...(this._c('everywhere_style') ? [
+          '<p class="eane-hint">Anything left on "Same as other tiles" follows Speaker tiles.</p>',
+          this._frameStyle(EW, true), this._ovTextStyle('name'), ...(this._c('show_state') ? [this._ovTextStyle('state')] : []),
+          ...(this._c('show_volume') && this._c('show_volume_value') ? [this._ovTextStyle('vol_value')] : []),
+          this._ovIconStyle('speaker_icon'), this._ovIconStyle('check_icon'),
+          ...(this._c('show_mute') ? [this._ovIconStyle('mute_icon')] : []), ...(this._c('show_power') ? [this._ovIconStyle('power_icon')] : [])]
+          : ['<p class="eane-hint">Off: it looks like the other tiles.</p>'])]],
       ['look-status', 'Status line', [this._textStyle('status', true)]],
     ];
     return `<p class="eane-hint">Every piece of text has its own size, weight and color; every icon its own size and color.
@@ -1644,8 +1674,17 @@ class EasyAnnounceCardEditor extends HTMLElement {
 
   _wire() {
     const all = (sel, fn) => this.querySelectorAll(sel).forEach(fn);
+    // Accordion: opening a panel closes the other panels at its level. A panel the redraw opens
+    // (already in _open) leaves its siblings alone.
     all('details.eane-sec, details.eane-sub', (d) => d.addEventListener('toggle', () => {
-      if (d.open) this._open.add(d.dataset.panel); else this._open.delete(d.dataset.panel);
+      const id = d.dataset.panel;
+      if (!d.open) { this._open.delete(id); return; }
+      if (this._open.has(id)) return;
+      this._open.add(id);
+      const cls = d.classList.contains('eane-sec') ? 'eane-sec' : 'eane-sub';
+      [...d.parentElement.children].forEach((s) => {
+        if (s !== d && s.tagName === 'DETAILS' && s.classList.contains(cls) && s.open) { s.open = false; this._open.delete(s.dataset.panel); }
+      });
     }));
     all('[data-key]', (el) => el.addEventListener('change', () => {
       const key = el.dataset.key;

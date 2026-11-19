@@ -25,7 +25,8 @@ speakers, press **Send**. One call reaches every speaker you picked. History is 
 - Remembers the speakers you picked, in each browser.
 - **Columns per orientation:** one count for landscape and one for portrait. The card follows the screen as it
   turns, or stays on the orientation you pick.
-- **Stacked or compact tiles:** the volume controls under the speaker's name, or beside it.
+- **Stacked or compact tiles:** the volume controls under the speaker's name, or beside it. Compact tiles line
+  the sliders up and give them the rest of the tile. Each speaker shows its volume (35%) beside its slider.
 - **Auto columns that fit the names:** every tile is made wide enough for the longest speaker name, then as
   many columns as fit.
 - **Tile background and border:** colors (normal and selected), width, style and corner radius. The Everywhere
@@ -149,8 +150,9 @@ Every option is in the visual editor.
 | `show_select_all` | `true` | All / None chips. |
 | `remember_selection` | `true` | Remember the selected speakers in this browser. |
 | `show_volume` | `true` | Volume slider on each speaker. |
+| `show_volume_value` | `true` | The speaker's volume (35%) beside its slider. |
 | `show_mute` | `true` | Mute button on each speaker. |
-| `show_power` | `false` | Power button on each speaker. |
+| `show_power` | `false` | Power button on each speaker, in the tile's top right corner. |
 | `show_announce_volume` | `true` | The "Announce Volume" switch and slider by the message. |
 | `announce_volume` | `0` | The level "Announce Volume" starts at, in %. `0` = starts switched off. |
 | `restore_volume` | `true` | Put each speaker back to its volume from before the announcement. |
@@ -161,7 +163,7 @@ Every option is in the visual editor.
 | `tile_border_color`, `tile_selected_border_color` | theme divider, the selected color | Tile border, normal and selected. |
 | `tile_border_width`, `tile_border_style`, `tile_border_radius` | `1`, `solid`, `12` | Border width (px), style (`solid`, `dashed`, `dotted`, `double`, `none`) and corner radius (px). |
 | `everywhere_style` | `false` | Style the Everywhere tile on its own. |
-| `everywhere_<key>` | same as other tiles | With `everywhere_style`, any tile setting for the Everywhere tile only: the background and border keys above, `name_*`, `state_*`, `speaker_icon_*`, `check_icon_*`, `mute_icon_*` and `power_icon_*`. For example `everywhere_tile_background`, `everywhere_name_size`. |
+| `everywhere_<key>` | same as other tiles | With `everywhere_style`, any tile setting for the Everywhere tile only: the background and border keys above, `name_*`, `state_*`, `vol_value_*`, `speaker_icon_*`, `check_icon_*`, `mute_icon_*` and `power_icon_*`. For example `everywhere_tile_background`, `everywhere_name_size`. |
 | `<text>_size`, `<text>_weight`, `<text>_color` | see below | Each piece of text, on its own. |
 | `<icon>_size`, `<icon>_color` | see below | Each icon, on its own. |
 
@@ -180,6 +182,7 @@ Colors take a theme variable (`var(--accent-color)`), a hex color or any CSS col
 | `links` (All / None chips) | 14, 600 | | | | |
 | `name` (speaker names) | 16, 500 | | | | |
 | `state` (speaker state) | 13, 400 | | | | |
+| `vol_value` (speaker volume value) | 13, 600 | | | | |
 | `status` (status line) | 14, 400 | | | | |
 
 For example `name_weight: 700`, `speaker_icon_color: var(--accent-color)`. The status line keeps its green /
