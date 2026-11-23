@@ -1,5 +1,15 @@
 # Changelog
 
+## v2026.11.23.8
+
+- **Pause button** (`show_pause`, on by default): shows on a speaker while it plays and pauses it; while paused
+  it shows ▶ and resumes. Speakers that can't pause get Stop instead. It sits in the tile's top corner on
+  stacked tiles and in the controls row on compact tiles, and never selects the tile. Styled on its own in
+  Appearance (Pause / play button), for the Everywhere tile too.
+- **Artwork** (`artwork`, default `background`): the album art or poster of what a speaker is playing fills its
+  tile, faded so the name and controls stay readable (`artwork_opacity`, default 35%). `thumbnail` puts it in
+  place of the speaker icon instead; `off` turns it off. Only while the speaker is playing or paused.
+
 ## v2026.11.19.7
 
 - **Everywhere tile settings are easy to find:** Appearance always has an **Everywhere tile** sub-panel, with

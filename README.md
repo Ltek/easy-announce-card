@@ -18,6 +18,8 @@ speakers, press **Send**. One call reaches every speaker you picked. History is 
 - **Pick several speakers**, or tap the All / None chips, and send once. Or set the card to announce as soon as you tap a speaker.
 - Each speaker shows what it's doing (Idle, Paused, Playing · song), with its own **volume slider**, **mute** and
   **power** buttons. Each one can be shown or hidden.
+- **Pause button** on each speaker while it plays (tap again to resume), and the **album art or poster** of what
+  it's playing as the tile background, or in place of the speaker icon.
 - **Announce Volume:** every selected speaker is set to it just before the announcement, and can be
   put back to its earlier volume afterwards.
 - **Sends with Alexa Media Player directly** (`notify.alexa_media`, announce or speak), **or through your own
@@ -46,6 +48,10 @@ speakers, press **Send**. One call reaches every speaker you picked. History is 
 | Auto columns, fitted to the names | Tile and Everywhere styling |
 |---|---|
 | ![Auto columns](screenshots/09-autofit.png) | ![Tile styling](screenshots/11-tile-style.png) |
+
+| Artwork as the tile background | Artwork in place of the icon |
+|---|---|
+| ![Artwork background](screenshots/14-artwork.png) | ![Artwork thumbnail](screenshots/15-artwork-thumb.png) |
 
 | Styled text and icons | Appearance settings |
 |---|---|
@@ -142,6 +148,8 @@ Every option is in the visual editor.
 | `orientation` | `auto` | `auto` follows the screen (portrait when it's taller than wide); `landscape` or `portrait` always uses that count. |
 | `columns_landscape` | `3` | Speaker columns in landscape; `0` fits as many as there's room for. |
 | `columns_portrait` | `2` | Speaker columns in portrait; `0` fits as many as there's room for. |
+| `artwork` | `background` | What a speaker is playing (its album art or poster), while it plays or is paused: `background` behind the tile, `thumbnail` in place of the speaker icon, or `off`. |
+| `artwork_opacity` | `35` | How strongly the background artwork shows, in % (5–100). |
 | `tile_layout` | `stacked` | `stacked`: volume controls under the name. `compact`: beside it. |
 | `auto_fit` | `names` | For a column count of `0`: `names` makes each tile wide enough for the longest speaker name and state; `width` uses `auto_min_width`. |
 | `auto_min_width` | `0` | Minimum tile width in px for `auto_fit: width`. `0` = 150 (260 for compact tiles). |
@@ -153,6 +161,7 @@ Every option is in the visual editor.
 | `show_volume_value` | `true` | The speaker's volume (35%) beside its slider. |
 | `show_mute` | `true` | Mute button on each speaker. |
 | `show_power` | `false` | Power button on each speaker, in the tile's top right corner. |
+| `show_pause` | `true` | Pause button while a speaker plays; play while it's paused. Stop on speakers that can't pause. In the top corner on stacked tiles, in the controls row on compact ones. |
 | `show_announce_volume` | `true` | The "Announce Volume" switch and slider by the message. |
 | `announce_volume` | `0` | The level "Announce Volume" starts at, in %. `0` = starts switched off. |
 | `restore_volume` | `true` | Put each speaker back to its volume from before the announcement. |
@@ -163,7 +172,7 @@ Every option is in the visual editor.
 | `tile_border_color`, `tile_selected_border_color` | theme divider, the selected color | Tile border, normal and selected. |
 | `tile_border_width`, `tile_border_style`, `tile_border_radius` | `1`, `solid`, `12` | Border width (px), style (`solid`, `dashed`, `dotted`, `double`, `none`) and corner radius (px). |
 | `everywhere_style` | `false` | Style the Everywhere tile on its own. |
-| `everywhere_<key>` | same as other tiles | With `everywhere_style`, any tile setting for the Everywhere tile only: the background and border keys above, `name_*`, `state_*`, `vol_value_*`, `speaker_icon_*`, `check_icon_*`, `mute_icon_*` and `power_icon_*`. For example `everywhere_tile_background`, `everywhere_name_size`. |
+| `everywhere_<key>` | same as other tiles | With `everywhere_style`, any tile setting for the Everywhere tile only: the background and border keys above, `name_*`, `state_*`, `vol_value_*`, `speaker_icon_*`, `check_icon_*`, `mute_icon_*`, `power_icon_*` and `pause_icon_*`. For example `everywhere_tile_background`, `everywhere_name_size`. |
 | `<text>_size`, `<text>_weight`, `<text>_color` | see below | Each piece of text, on its own. |
 | `<icon>_size`, `<icon>_color` | see below | Each icon, on its own. |
 
@@ -179,6 +188,7 @@ Colors take a theme variable (`var(--accent-color)`), a hex color or any CSS col
 | `avol_value` (volume readout) | 14, 600 | | `check_icon` (selected mark) | 20 | |
 | `section` ("Speakers" heading) | 13, 600 | | `mute_icon` | 22 | `mute_icon_muted_color` (muted) |
 | `count` (selected count) | 13, 500 | | `power_icon` | 22 | `power_icon_on_color` (on) |
+| | | | `pause_icon` (pause / play) | 22 | |
 | `links` (All / None chips) | 14, 600 | | | | |
 | `name` (speaker names) | 16, 500 | | | | |
 | `state` (speaker state) | 13, 400 | | | | |
