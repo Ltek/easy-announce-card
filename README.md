@@ -16,8 +16,8 @@ speakers, press **Send**. One call reaches every speaker you picked. History is 
   "This Device" (the Alexa app) is left out unless you want it. Leave others out with patterns (`*Phone*`,
   `media_player.*_group`), or always add some.
 - **Pick several speakers**, or tap the All / None chips, and send once. Or set the card to announce as soon as you tap a speaker.
-- Each speaker shows what it's doing (Idle, Paused, Playing · song), with its own **volume slider**, **mute** and
-  **power** buttons. Each one can be shown or hidden.
+- Each speaker shows what it's doing (Idle, Paused, Playing · song), with its own **volume slider** and value,
+  **mute** and **pause / play** buttons. Each one can be shown or hidden.
 - **Pause button** on each speaker while it plays (tap again to resume), and the **album art or poster** of what
   it's playing as the tile background, or in place of the speaker icon.
 - **Announce Volume:** every selected speaker is set to it just before the announcement, and can be
@@ -34,7 +34,7 @@ speakers, press **Send**. One call reaches every speaker you picked. History is 
 - **Tile background and border:** colors (normal and selected), width, style and corner radius. The Everywhere
   tile looks like the others, or gets its own style.
 - **Style every piece of text and every icon on its own:** size, weight and color for each text (title, presets,
-  message, Send, speaker names, state line, …), size and color for each icon (speaker, check mark, mute, power, …).
+  message, Send, speaker names, state line, …), size and color for each icon (speaker, check mark, mute, pause, …).
 - A visual editor for every setting. Every color can follow your theme or be custom; every size is a slider.
 
 | Portrait, 2 columns, light theme | Editing presets |
@@ -160,8 +160,7 @@ Every option is in the visual editor.
 | `show_volume` | `true` | Volume slider on each speaker. |
 | `show_volume_value` | `true` | The speaker's volume (35%) beside its slider. |
 | `show_mute` | `true` | Mute button on each speaker. |
-| `show_power` | `false` | Power button on each speaker, in the tile's top right corner. |
-| `show_pause` | `true` | Pause button while a speaker plays; play while it's paused. Stop on speakers that can't pause. In the top corner on stacked tiles, in the controls row on compact ones. |
+| `show_pause` | `true` | Pause / play button in the tile's top right corner (the right edge on compact tiles): pause while a speaker plays, play while it's paused. Stop on speakers that can't pause. |
 | `show_announce_volume` | `true` | The "Announce Volume" switch and slider by the message. |
 | `announce_volume` | `0` | The level "Announce Volume" starts at, in %. `0` = starts switched off. |
 | `restore_volume` | `true` | Put each speaker back to its volume from before the announcement. |
@@ -172,7 +171,7 @@ Every option is in the visual editor.
 | `tile_border_color`, `tile_selected_border_color` | theme divider, the selected color | Tile border, normal and selected. |
 | `tile_border_width`, `tile_border_style`, `tile_border_radius` | `1`, `solid`, `12` | Border width (px), style (`solid`, `dashed`, `dotted`, `double`, `none`) and corner radius (px). |
 | `everywhere_style` | `false` | Style the Everywhere tile on its own. |
-| `everywhere_<key>` | same as other tiles | With `everywhere_style`, any tile setting for the Everywhere tile only: the background and border keys above, `name_*`, `state_*`, `vol_value_*`, `speaker_icon_*`, `check_icon_*`, `mute_icon_*`, `power_icon_*` and `pause_icon_*`. For example `everywhere_tile_background`, `everywhere_name_size`. |
+| `everywhere_<key>` | same as other tiles | With `everywhere_style`, any tile setting for the Everywhere tile only: the background and border keys above, `name_*`, `state_*`, `vol_value_*`, `speaker_icon_*`, `check_icon_*`, `mute_icon_*` and `pause_icon_*`. For example `everywhere_tile_background`, `everywhere_name_size`. |
 | `<text>_size`, `<text>_weight`, `<text>_color` | see below | Each piece of text, on its own. |
 | `<icon>_size`, `<icon>_color` | see below | Each icon, on its own. |
 
@@ -187,8 +186,7 @@ Colors take a theme variable (`var(--accent-color)`), a hex color or any CSS col
 | `avol` ("Announce Volume") | 14, 400 | | `speaker_icon` | 32 | `speaker_icon_on_color` (selected) |
 | `avol_value` (volume readout) | 14, 600 | | `check_icon` (selected mark) | 20 | |
 | `section` ("Speakers" heading) | 13, 600 | | `mute_icon` | 22 | `mute_icon_muted_color` (muted) |
-| `count` (selected count) | 13, 500 | | `power_icon` | 22 | `power_icon_on_color` (on) |
-| | | | `pause_icon` (pause / play) | 22 | |
+| `count` (selected count) | 13, 500 | | `pause_icon` (pause / play) | 22 | |
 | `links` (All / None chips) | 14, 600 | | | | |
 | `name` (speaker names) | 16, 500 | | | | |
 | `state` (speaker state) | 13, 400 | | | | |
@@ -208,7 +206,7 @@ the helper to it keep working.
 
 ### Volume
 
-Volume, mute and power only show on speakers that support them. **Announce Volume** sets every selected speaker
+Volume, mute and pause only show on speakers that support them. **Announce Volume** sets every selected speaker
 to that volume just before announcing; each browser remembers the last level. With `restore_volume`, the
 card puts each speaker back afterwards. Keep the page open until then: the card sends that change itself,
 so closing the page skips it. If you announce again before then, the speakers go back to the volume they

@@ -1,5 +1,13 @@
 # Changelog
 
+## v2026.11.23.9
+
+- **Pause / play replaces the power button**, in the same spot: the tile's top right corner (the right edge
+  on compact tiles). On an Echo, power off stopped the music; pause does that and lets you resume. The power
+  button is gone, and its settings (`show_power`, `power_icon_*`) are removed from saved cards.
+- **Artwork settings moved** to Appearance → Speaker tiles → Artwork.
+- **0% shows as 0%:** a speaker that reports no volume level shows 0%, not a dash.
+
 ## v2026.11.23.8
 
 - **Pause button** (`show_pause`, on by default): shows on a speaker while it plays and pauses it; while paused
