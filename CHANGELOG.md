@@ -1,5 +1,14 @@
 # Changelog
 
+## v2026.11.23.10
+
+- **Stop button** (`show_stop`, on by default) next to pause / play in the tile's corner, while a speaker plays
+  or is paused. It calls `media_player.media_stop`, which ends playback for good (bedtime, leaving the house);
+  pause is for a short break you'll resume. Pause and stop each show or hide on their own (Volume panel), and
+  each has its own style in Appearance.
+- Compact tiles make room for pause and stop only while they show, and the controls no longer overlap the
+  volume value in a narrow tile: the name shortens first.
+
 ## v2026.11.23.9
 
 - **Pause / play replaces the power button**, in the same spot: the tile's top right corner (the right edge

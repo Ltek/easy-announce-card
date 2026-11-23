@@ -1,5 +1,5 @@
 // Easy Announce Card (Ltek) — Home Assistant Dashboard card for Alexa announcements
-// Version: v2026.11.23.9
+// Version: v2026.11.23.10
 //
 // Type a message (or tap a preset), pick the speakers, press Send. One call reaches every
 // selected speaker:
@@ -15,7 +15,7 @@
 // API (input_select/list + input_select/update), keeping any "---" / "Select..." placeholder.
 // YAML input_selects are read-only.
 //
-// Volume: each speaker tile can show a volume slider, a mute button and a pause / play button (each
+// Volume: each speaker tile can show a volume slider, a mute button, a pause / play and a stop button (each
 // optional, and only where the speaker supports it). An announcement volume, when switched on,
 // sets every target to that level just before announcing; with restore_volume the card puts each
 // one back to the level it had before, once the announcement should be over (restore_after
@@ -30,7 +30,7 @@
 // interpolated into it); per-card values are custom properties set inline on the card root.
 // The card renders once and patches itself on every state change.
 
-const BUILD_NUMBER = 'v2026.11.23.9';
+const BUILD_NUMBER = 'v2026.11.23.10';
 const VERSION = BUILD_NUMBER.slice(1);
 const CARD_TAG = 'easy-announce-card';
 const EDITOR_TAG = 'easy-announce-card-editor';
@@ -82,6 +82,7 @@ const DEFAULTS = {
   show_volume_value: true,
   show_mute: true,
   show_pause: true,
+  show_stop: true,
   artwork: 'background',
   artwork_opacity: 35,
   show_announce_volume: true,
@@ -122,6 +123,7 @@ const ICON_ITEMS = [
   ['check_icon', 'Selected check mark', 20, 'Selected color', '#03a9f4', 'var(--ean-c-selected)'],
   ['mute_icon', 'Mute button', 22, ...ICO, ['mute_icon_muted_color', 'When muted', 'Theme warning', '#ffa600', 'var(--warning-color, #f4b942)']],
   ['pause_icon', 'Pause / play button', 22, 'Theme text', '#e1e1e1', 'var(--primary-text-color)'],
+  ['stop_icon', 'Stop button', 22, 'Theme text', '#e1e1e1', 'var(--primary-text-color)'],
 ];
 const WEIGHTS = [[300, 'Light'], [400, 'Normal'], [500, 'Medium'], [600, 'Semibold'], [700, 'Bold'], [800, 'Extra bold']];
 for (const [item, , size, weight] of TEXT_ITEMS) { DEFAULTS[`${item}_size`] = size; DEFAULTS[`${item}_weight`] = weight; }
@@ -153,7 +155,7 @@ const BORDER_STYLES = [['solid', 'Solid'], ['dashed', 'Dashed'], ['dotted', 'Dot
 // What a speaker tile is styled with; the Everywhere tile can override every one of them
 // (everywhere_<key>; unset = the same as the other tiles).
 const TILE_TEXT = ['name', 'state', 'vol_value'];
-const TILE_ICONS = ['speaker_icon', 'check_icon', 'mute_icon', 'pause_icon'];
+const TILE_ICONS = ['speaker_icon', 'check_icon', 'mute_icon', 'pause_icon', 'stop_icon'];
 // The power button (v2026.11.17–.23) was replaced by the pause / play button in its spot.
 const REMOVED_KEYS = ['show_power', 'power_icon_size', 'power_icon_color', 'power_icon_on_color'];
 const EW = 'everywhere_';
@@ -329,26 +331,32 @@ function placeEverywhere(list, c) {
 function features(st) { return Number((st && st.attributes && st.attributes.supported_features) || 0); }
 const can = (s, bit) => (s.features & bit) === bit;
 
-/** Which controls a speaker's tile shows: { volume, mute, pause }, by option and by what it supports. */
+/** Which controls a speaker's tile shows: { volume, mute, pause, stop }, by option and by what it supports. */
 function tileControls(c, s) {
-  if (!s.available) return { volume: false, mute: false, pause: false };
+  if (!s.available) return { volume: false, mute: false, pause: false, stop: false };
+  const stop = !!cfg(c, 'show_stop') && can(s, FEAT.STOP);
   return {
     volume: !!cfg(c, 'show_volume') && can(s, FEAT.VOLUME_SET),
     mute: !!cfg(c, 'show_mute') && can(s, FEAT.VOLUME_MUTE),
-    pause: !!cfg(c, 'show_pause') && (can(s, FEAT.PAUSE) || can(s, FEAT.STOP)),
+    // Without a pause of its own, the pause button stops instead, unless the stop button is there.
+    pause: !!cfg(c, 'show_pause') && (can(s, FEAT.PAUSE) || (can(s, FEAT.STOP) && !stop)),
+    stop,
   };
 }
+
+/** The stop button shows while something is playing or paused (there's something to stop). */
+const stopVisible = (st) => !!st && ['playing', 'paused', 'buffering'].includes(st.state);
 
 /**
  * The pause button for a speaker's state: null when there's nothing to pause or resume (it hides),
  * else { icon, title, service }. Playing → pause (stop if it can't pause); paused → play.
  */
-function pauseAction(st) {
+function pauseAction(st, stopFallback = true) {
   if (!st) return null;
   const f = features(st);
   if (st.state === 'playing' || st.state === 'buffering') {
     return (f & FEAT.PAUSE) ? { icon: 'mdi:pause', title: 'Pause', service: 'media_pause' }
-      : (f & FEAT.STOP) ? { icon: 'mdi:stop', title: 'Stop', service: 'media_stop' } : null;
+      : (stopFallback && (f & FEAT.STOP)) ? { icon: 'mdi:stop', title: 'Stop', service: 'media_stop' } : null;
   }
   if (st.state === 'paused') {
     return (f & FEAT.PLAY) ? { icon: 'mdi:play', title: 'Play', service: 'media_play' }
@@ -562,7 +570,7 @@ const CARD_CSS = `
     pointer-events: none; display: none; }
   .tile.has-art .art { display: block; }
   .tile > .tile-top, .tile > .ctl { position: relative; z-index: 1; }
-  .tile > .tile-pause { z-index: 1; }
+  .tile > .tile-corner { z-index: 1; }
   .spk-wrap .thumb { display: none; width: var(--ean-speaker_icon-sz); height: var(--ean-speaker_icon-sz); border-radius: 6px;
     background-size: cover; background-position: center; }
   .tile.has-thumb .spk-wrap .thumb { display: block; }
@@ -578,15 +586,22 @@ const CARD_CSS = `
      the same place and takes the rest of the tile. */
   .tile.compact .tile-top { flex: 0 1 var(--ean-name-w, auto); }
   .tile.compact.tile-row .tile-top { flex: 0 1 auto; }
-  .tile.compact .ctl { flex: 1 1 0; min-width: 150px; }
+  /* The controls never get narrower than they need (mute + a usable slider + the value); in a tight
+     tile the name shortens first, so nothing overlaps. */
+  .tile.compact .ctl { flex: 1 1 0; min-width: auto; }
+  .tile.compact .tile-top { min-width: 72px; }
+  .tile.compact input.vol { min-width: 64px; }
   .tile.compact .txt { padding-right: 0; }
-  /* Pause / play sits in the tile's top right corner (the right edge on compact tiles). */
-  .tile .tile-pause { position: absolute; top: 8px; right: 10px; }
-  .tile.compact .tile-pause { top: 50%; transform: translateY(-50%); }
-  /* Room for it: beside the name only while it shows (stacked); always on compact tiles, so the slider
-     doesn't change length when playback starts. */
+  /* Pause / play and stop sit in the tile's top right corner (the right edge on compact tiles). */
+  .tile .tile-corner { position: absolute; top: 8px; right: 10px; display: flex; align-items: center; gap: 8px; }
+  .tile.compact .tile-corner { top: 50%; transform: translateY(-50%); }
+  /* Room for them only while they show: beside the name (stacked), after the slider (compact). */
   .tile.pausing:not(.compact) .txt { padding-right: calc(var(--ean-pause_icon-sz) + 6px); }
-  .tile.compact.has-pause .ctl { padding-right: calc(var(--ean-pause_icon-sz) + 8px); }
+  .tile.stopping:not(.compact) .txt { padding-right: calc(var(--ean-stop_icon-sz) + 6px); }
+  .tile.pausing.stopping:not(.compact) .txt { padding-right: calc(var(--ean-pause_icon-sz) + var(--ean-stop_icon-sz) + 14px); }
+  .tile.compact.pausing .ctl { padding-right: calc(var(--ean-pause_icon-sz) + 8px); }
+  .tile.compact.stopping .ctl { padding-right: calc(var(--ean-stop_icon-sz) + 8px); }
+  .tile.compact.pausing.stopping .ctl { padding-right: calc(var(--ean-pause_icon-sz) + var(--ean-stop_icon-sz) + 16px); }
   .vol-val { flex: none; min-width: 2.7em; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap;
     font-size: var(--ean-vol_value-fs); font-weight: var(--ean-vol_value-fw); color: var(--ean-vol_value-c); }
   .ctl { display: flex; align-items: center; gap: 6px; min-width: 0; cursor: default; }
@@ -596,7 +611,9 @@ const CARD_CSS = `
   .ctl-btn[data-mute].muted { color: var(--ean-mute_icon_muted-c); }
   .ctl-btn[data-pause] { color: var(--ean-pause_icon-c); }
   .ctl-btn[data-pause] ha-icon { --mdc-icon-size: var(--ean-pause_icon-sz); width: var(--ean-pause_icon-sz); height: var(--ean-pause_icon-sz); }
-  .ctl-btn[data-pause][hidden] { display: none; }
+  .ctl-btn[data-stop] { color: var(--ean-stop_icon-c); }
+  .ctl-btn[data-stop] ha-icon { --mdc-icon-size: var(--ean-stop_icon-sz); width: var(--ean-stop_icon-sz); height: var(--ean-stop_icon-sz); }
+  .ctl-btn[data-pause][hidden], .ctl-btn[data-stop][hidden] { display: none; }
   input.vol { flex: 1 1 auto; min-width: 0; width: 100%; margin: 0; accent-color: var(--ean-c-selected); cursor: pointer; }
   .avol { display: flex; align-items: center; gap: 8px; font-size: var(--ean-avol-fs); font-weight: var(--ean-avol-fw); color: var(--ean-avol-c); }
   .avol label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; }
@@ -814,8 +831,9 @@ class EasyAnnounceCard extends HTMLElement {
     const ewVars = everywhereStyleVars(this._config);
     const art = this._c('artwork');
     const compact = this._c('tile_layout') === 'compact';
-    // Pause / play: in the tile's top right corner. data-ctl: it never selects the tile.
-    const pauseBtn = (id) => `<button class="ctl-btn tile-pause" data-ctl data-pause="${id}" title="Pause" hidden><ha-icon icon="mdi:pause"></ha-icon></button>`;
+    // Pause / play and stop: in the tile's top right corner. data-ctl: they never select the tile.
+    const pauseBtn = (id) => `<button class="ctl-btn tile-pause" data-pause="${id}" title="Pause" hidden><ha-icon icon="mdi:pause"></ha-icon></button>`;
+    const stopBtn = (id) => `<button class="ctl-btn tile-stop" data-stop="${id}" title="Stop" hidden><ha-icon icon="mdi:stop"></ha-icon></button>`;
     return this._speakers.map((s) => {
       const k = tileControls(this._config, s);
       const id = esc(s.id);
@@ -823,8 +841,8 @@ class EasyAnnounceCard extends HTMLElement {
           ${k.mute ? `<button class="ctl-btn" data-mute="${id}" title="Mute"><ha-icon icon="mdi:volume-high"></ha-icon></button>` : ''}
           ${k.volume ? `<input type="range" class="vol" data-vol="${id}" min="0" max="100" step="1" aria-label="Volume">` : ''}
           ${k.volume && this._c('show_volume_value') ? `<span class="vol-val" data-vol-val></span>` : ''}</div>` : '';
-      const corner = k.pause ? pauseBtn(id) : '';
-      return `<div class="tile${s.everywhere === 'row' ? ' tile-row' : ''}${compact ? ' compact' : ''}${k.pause ? ' has-pause' : ''}" role="button" tabindex="${s.available ? 0 : -1}" data-spk="${id}" title="${id}"${s.everywhere && ewVars ? ` style="${esc(ewVars)}" data-everywhere` : ''}>
+      const corner = k.pause || k.stop ? `<span class="tile-corner" data-ctl>${k.pause ? pauseBtn(id) : ''}${k.stop ? stopBtn(id) : ''}</span>` : '';
+      return `<div class="tile${s.everywhere === 'row' ? ' tile-row' : ''}${compact ? ' compact' : ''}${k.pause ? ' has-pause' : ''}${k.stop ? ' has-stop' : ''}" role="button" tabindex="${s.available ? 0 : -1}" data-spk="${id}" title="${id}"${s.everywhere && ewVars ? ` style="${esc(ewVars)}" data-everywhere` : ''}>
         ${art === 'background' ? '<span class="art" data-art></span>' : ''}
         <div class="tile-top"><span class="spk-wrap"><ha-icon class="spk-icon" icon="mdi:speaker"></ha-icon>${art === 'thumbnail' ? '<span class="thumb" data-thumb></span>' : ''}<span class="check"><ha-icon icon="mdi:check-circle"></ha-icon></span></span>
         <span class="txt"><span class="name">${esc(s.name)}</span>${showState ? '<span class="state" data-state></span>' : ''}</span></div>
@@ -883,7 +901,7 @@ class EasyAnnounceCard extends HTMLElement {
     try { if (document.fonts && document.fonts.ready) document.fonts.ready.then(run); } catch (e) { /* no font loading API */ }
   }
 
-  /** Tap / Enter on a tile, and its volume, mute and pause controls (which never select the tile). */
+  /** Tap / Enter on a tile, and its volume, mute, pause and stop controls (which never select the tile). */
   _wireTiles(scope) {
     scope.querySelectorAll('[data-spk]').forEach((el) => {
       el.addEventListener('click', (e) => { if (!e.target.closest('[data-ctl]')) this._tapSpeaker(el.dataset.spk); });
@@ -910,8 +928,14 @@ class EasyAnnounceCard extends HTMLElement {
       this._hass.callService('media_player', 'volume_mute', { entity_id: b.dataset.mute, is_volume_muted: !muted })
         .catch((e) => this._setStatus('err', `Mute failed: ${errText(e)}`));
     }));
+    scope.querySelectorAll('[data-stop]').forEach((b) => b.addEventListener('click', () => {
+      if (!stopVisible(this._hass.states[b.dataset.stop])) return;
+      this._hass.callService('media_player', 'media_stop', { entity_id: b.dataset.stop })
+        .catch((e) => this._setStatus('err', `Stop failed: ${errText(e)}`));
+    }));
     scope.querySelectorAll('[data-pause]').forEach((b) => b.addEventListener('click', () => {
-      const act = pauseAction(this._hass.states[b.dataset.pause]);
+      const tile = b.closest('.tile');
+      const act = pauseAction(this._hass.states[b.dataset.pause], !(tile && tile.querySelector('[data-stop]')));
       if (!act) return;
       this._hass.callService('media_player', act.service, { entity_id: b.dataset.pause })
         .catch((e) => this._setStatus('err', `${act.title} failed: ${errText(e)}`));
@@ -1062,9 +1086,11 @@ class EasyAnnounceCard extends HTMLElement {
         if (mute.querySelector('ha-icon').getAttribute('icon') !== ic) mute.querySelector('ha-icon').setAttribute('icon', ic);
         mute.title = m ? 'Unmute' : 'Mute';
       }
+      const sb = el.querySelector('[data-stop]');
+      if (sb) { const vis = stopVisible(st); sb.hidden = !vis; el.classList.toggle('stopping', vis); }
       const pb = el.querySelector('[data-pause]');
       if (pb) {
-        const act = pauseAction(st);
+        const act = pauseAction(st, !sb);
         pb.hidden = !act;
         el.classList.toggle('pausing', !!act);
         if (act) {
@@ -1393,7 +1419,7 @@ const EDITOR_CSS = `
 
 // Settings that show or hide other settings: changing one re-renders the editor.
 const REVEAL_KEYS = new Set(['show_volume', 'show_volume_value', 'orientation', 'auto_fit', 'everywhere_style', 'tile_layout', 'send_with', 'presets_entity', 'show_message_box', 'speaker_source', 'hide_unavailable', 'tap_action', 'preset_style',
-  'show_announce_volume', 'restore_volume', 'show_state', 'show_select_all', 'show_mute', 'show_pause', 'artwork', 'allow_edit_presets']);
+  'show_announce_volume', 'restore_volume', 'show_state', 'show_select_all', 'show_mute', 'show_pause', 'show_stop', 'artwork', 'allow_edit_presets']);
 // Slider readouts that aren't px.
 const SLIDER_FMT = {
   columns_landscape: (n) => (Number(n) ? String(n) : 'Auto'),
@@ -1605,7 +1631,9 @@ class EasyAnnounceCardEditor extends HTMLElement {
       ${this._check('show_volume', 'Volume slider')}
       ${this._c('show_volume') ? this._check('show_volume_value', 'Volume value', '(35% beside the slider)') : ''}
       ${this._check('show_mute', 'Mute button')}
-      ${this._check('show_pause', 'Pause / play button', '(top right corner, while it plays or is paused)')}
+      ${this._check('show_pause', 'Pause / play button', '(pause now, resume later)')}
+      ${this._check('show_stop', 'Stop button', '(ends playback, e.g. at bedtime)')}
+      ${this._c('show_pause') || this._c('show_stop') ? '<p class="eane-hint">They sit in the tile\'s top right corner while a speaker is playing or paused.</p>' : ''}
       <div class="eane-group">Announcement volume</div>
       ${this._check('show_announce_volume', 'Show "Announce Volume" by the message', '(a switch and a slider)')}
       ${this._c('show_announce_volume') ? `<p class="eane-hint">When it's on, every selected speaker is set to that volume just before the announcement.
@@ -1698,6 +1726,7 @@ class EasyAnnounceCardEditor extends HTMLElement {
         this._iconStyle('speaker_icon'), this._iconStyle('check_icon'),
         ...(this._c('show_volume') && this._c('show_volume_value') ? [this._textStyle('vol_value')] : []),
         ...(this._c('show_pause') ? [this._iconStyle('pause_icon')] : []),
+        ...(this._c('show_stop') ? [this._iconStyle('stop_icon')] : []),
         ...(this._c('show_mute') ? [this._iconStyle('mute_icon')] : []),
         `<div class="eane-group">Artwork</div>
         <p class="eane-hint">The album art or poster of what a speaker is playing, while it plays or is paused.</p>
@@ -1713,6 +1742,7 @@ class EasyAnnounceCardEditor extends HTMLElement {
           ...(this._c('show_volume') && this._c('show_volume_value') ? [this._ovTextStyle('vol_value')] : []),
           this._ovIconStyle('speaker_icon'), this._ovIconStyle('check_icon'),
           ...(this._c('show_pause') ? [this._ovIconStyle('pause_icon')] : []),
+          ...(this._c('show_stop') ? [this._ovIconStyle('stop_icon')] : []),
           ...(this._c('show_mute') ? [this._ovIconStyle('mute_icon')] : [])]
           : ['<p class="eane-hint">Off: it looks like the other tiles.</p>'])]],
       ['look-status', 'Status line', [this._textStyle('status', true)]],
@@ -1821,7 +1851,7 @@ EasyAnnounceCard._test = {
   BUILD_NUMBER, VERSION, CARD_CSS, EDITOR_CSS, DEFAULTS, COLOR_DEFS, VIEWS,
   normalizeConfig, discoverSpeakers, cleanName, globRe, excluded, readPresets, planOptions, isPlaceholder,
   buildCall, setupProblem, rootStyleVars, colorMode, speakerState, viewKey,
-  pauseAction, artworkUrl, cssUrl, TEXT_ITEMS, ICON_ITEMS, FRAME_COLORS, EW_KEYS, everywhereStyleVars, tileFitWidth, usesNameFit, isThisDevice, effectiveOrientation, gridColumns, tileControls, restoreDelayMs, restoreLevels, scheduleRestore, RESTORES, FEAT,
+  pauseAction, stopVisible, artworkUrl, cssUrl, TEXT_ITEMS, ICON_ITEMS, FRAME_COLORS, EW_KEYS, everywhereStyleVars, tileFitWidth, usesNameFit, isThisDevice, effectiveOrientation, gridColumns, tileControls, restoreDelayMs, restoreLevels, scheduleRestore, RESTORES, FEAT,
 };
 
 if (!customElements.get(CARD_TAG)) customElements.define(CARD_TAG, EasyAnnounceCard);
