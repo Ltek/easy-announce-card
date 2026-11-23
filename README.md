@@ -53,6 +53,10 @@ speakers, press **Send**. One call reaches every speaker you picked. History is 
 |---|---|
 | ![Artwork background](screenshots/14-artwork.png) | ![Artwork thumbnail](screenshots/15-artwork-thumb.png) |
 
+Compact tiles with Auto columns on a wide tablet:
+
+![Tablet, compact tiles, Auto columns](screenshots/16-tablet-auto.png)
+
 | Styled text and icons | Appearance settings |
 |---|---|
 | ![Styled](screenshots/05-styled.png) | ![Appearance settings](screenshots/06-editor-appearance.png) |
@@ -148,9 +152,10 @@ Every option is in the visual editor.
 | `orientation` | `auto` | `auto` follows the screen (portrait when it's taller than wide); `landscape` or `portrait` always uses that count. |
 | `columns_landscape` | `3` | Speaker columns in landscape; `0` fits as many as there's room for. |
 | `columns_portrait` | `2` | Speaker columns in portrait; `0` fits as many as there's room for. |
-| `artwork` | `background` | What a speaker is playing (its album art or poster), while it plays or is paused: `background` behind the tile, `thumbnail` in place of the speaker icon, or `off`. |
+| `artwork` | `background` | The picture Alexa gives each speaker (the album art or poster of what it's playing): `background` behind the tile, `thumbnail` in place of the speaker icon, or `off`. |
+| `artwork_idle` | `true` | Keep the artwork after playback stops, while Alexa still gives the speaker a picture. Off: only while playing or paused. |
 | `artwork_opacity` | `35` | How strongly the background artwork shows, in % (5–100). |
-| `tile_layout` | `stacked` | `stacked`: volume controls under the name. `compact`: beside it. |
+| `tile_layout` | `stacked` | `stacked`: volume controls under the name. `compact`: beside it; in a grid too narrow for that, the tiles stack until there's room. |
 | `auto_fit` | `names` | For a column count of `0`: `names` makes each tile wide enough for the longest speaker name and state; `width` uses `auto_min_width`. |
 | `auto_min_width` | `0` | Minimum tile width in px for `auto_fit: width`. `0` = 150 (260 for compact tiles). |
 | `tap_action` | `select` | `select`: tap to select, then Send. `send`: tap a speaker to announce on it straight away. |

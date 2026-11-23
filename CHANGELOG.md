@@ -1,5 +1,15 @@
 # Changelog
 
+## v2026.11.23.11
+
+- **Artwork stays after playback stops** (`artwork_idle`, on by default): the tile keeps the picture Alexa gives
+  the speaker, not only while it's playing or paused. Turn it off in Appearance → Speaker tiles → Artwork.
+- **Compact tiles fit on wide tablets.** Auto columns counted only the names, not the controls, so a wide card
+  got too many narrow columns: names were cut to a letter and the volume value spilled out of the tile. Auto now
+  counts the mute button, the slider's minimum, the value and the pause / stop buttons. A grid too narrow for
+  name and controls side by side (for example a fixed column count) stacks the controls under the name until
+  there's room, and nothing spills out of a tile any more.
+
 ## v2026.11.23.10
 
 - **Stop button** (`show_stop`, on by default) next to pause / play in the tile's corner, while a speaker plays

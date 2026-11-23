@@ -1,5 +1,5 @@
 // Easy Announce Card (Ltek) — Home Assistant Dashboard card for Alexa announcements
-// Version: v2026.11.23.10
+// Version: v2026.11.23.11
 //
 // Type a message (or tap a preset), pick the speakers, press Send. One call reaches every
 // selected speaker:
@@ -30,7 +30,7 @@
 // interpolated into it); per-card values are custom properties set inline on the card root.
 // The card renders once and patches itself on every state change.
 
-const BUILD_NUMBER = 'v2026.11.23.10';
+const BUILD_NUMBER = 'v2026.11.23.11';
 const VERSION = BUILD_NUMBER.slice(1);
 const CARD_TAG = 'easy-announce-card';
 const EDITOR_TAG = 'easy-announce-card-editor';
@@ -85,6 +85,7 @@ const DEFAULTS = {
   show_stop: true,
   artwork: 'background',
   artwork_opacity: 35,
+  artwork_idle: true,
   show_announce_volume: true,
   announce_volume: 0,
   restore_volume: true,
@@ -278,6 +279,29 @@ function tileFitWidth({ chrome, topNeed, compact = false, gap = 0, ctlMin = 0 })
   return Math.ceil(chrome + inner) + 2;
 }
 
+/**
+ * What a compact tile's controls need side by side: each button and the value at their size, the slider
+ * at its minimum, the gaps, and room for the corner buttons (pause, stop): always (allCorner, for the
+ * column count, so it doesn't change when playback starts), or only those showing now. 0 without controls.
+ */
+function controlsNeed(tile, n, allCorner = true) {
+  const ctl = tile.querySelector('.ctl');
+  const corner = tile.querySelector('.tile-corner');
+  let w = 0;
+  if (ctl) {
+    const kids = [...ctl.children];
+    const gap = n(getComputedStyle(ctl).columnGap || getComputedStyle(ctl).gap);
+    for (const k of kids) w += k.matches('input.vol') ? n(getComputedStyle(k).minWidth) : k.getBoundingClientRect().width || k.scrollWidth;
+    w += gap * Math.max(0, kids.length - 1);
+  }
+  if (corner) {
+    const btns = [...corner.children].filter((b) => allCorner || !b.hidden);
+    const sizes = btns.map((b) => n(getComputedStyle(b.querySelector('ha-icon') || b).width) || 22);
+    if (btns.length) w += sizes.reduce((a, b) => a + b, 0) + 8 * Math.max(0, btns.length - 1) + 8;
+  }
+  return w;
+}
+
 const usesNameFit = (c) => cfg(c, 'auto_fit') === 'names' && (!Number(cfg(c, 'columns_landscape')) || !Number(cfg(c, 'columns_portrait')));
 
 function discoverSpeakers(hass, c) {
@@ -365,9 +389,13 @@ function pauseAction(st, stopFallback = true) {
   return null;
 }
 
-/** The artwork to show for a speaker: its entity_picture while it's playing or paused, else ''. */
-function artworkUrl(st) {
-  if (!st || !['playing', 'paused', 'buffering'].includes(st.state)) return '';
+/**
+ * The artwork to show for a speaker: its entity_picture (the picture Alexa gives it). With idle false,
+ * only while it's playing or paused; else whenever it has one, also after playback stops.
+ */
+function artworkUrl(st, idle = false) {
+  if (!st || UNAVAILABLE.has(st.state)) return '';
+  if (!idle && !['playing', 'paused', 'buffering'].includes(st.state)) return '';
   const a = st.attributes || {};
   return typeof a.entity_picture === 'string' ? a.entity_picture.trim() : '';
 }
@@ -560,7 +588,7 @@ const CARD_CSS = `
   @media (orientation: portrait) { .grid { grid-template-columns: var(--ean-cols-p); } }
   ha-card.orient-landscape .grid { grid-template-columns: var(--ean-cols-l); }
   ha-card.orient-portrait .grid { grid-template-columns: var(--ean-cols-p); }
-  .tile { position: relative; display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 10px 12px; cursor: pointer;
+  .tile { position: relative; display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 10px 12px; cursor: pointer; overflow: hidden;
     border: var(--ean-tile-bw) var(--ean-tile-bs) var(--ean-tile-bc); border-radius: var(--ean-tile-r); background: var(--ean-tile-bg);
     color: var(--primary-text-color); font-family: inherit; text-align: left; transition: border-color .15s ease, background-color .15s ease; }
   .tile:hover { border-color: color-mix(in srgb, var(--ean-c-selected) 60%, var(--ean-tile-bc)); }
@@ -591,6 +619,14 @@ const CARD_CSS = `
   .tile.compact .ctl { flex: 1 1 0; min-width: auto; }
   .tile.compact .tile-top { min-width: 72px; }
   .tile.compact input.vol { min-width: 64px; }
+  /* A compact tile too narrow for its name and controls side by side (measured) stacks them. */
+  .tile.compact.squeeze { flex-direction: column; align-items: stretch; gap: 8px; }
+  .tile.compact.squeeze .tile-top { flex: none; min-width: 0; }
+  .tile.compact.squeeze .ctl, .tile.compact.squeeze.pausing .ctl, .tile.compact.squeeze.stopping .ctl { flex: none; padding-right: 0; }
+  .tile.compact.squeeze .tile-corner { top: 8px; transform: none; }
+  .tile.compact.squeeze.pausing .txt { padding-right: calc(var(--ean-pause_icon-sz) + 6px); }
+  .tile.compact.squeeze.stopping .txt { padding-right: calc(var(--ean-stop_icon-sz) + 6px); }
+  .tile.compact.squeeze.pausing.stopping .txt { padding-right: calc(var(--ean-pause_icon-sz) + var(--ean-stop_icon-sz) + 14px); }
   .tile.compact .txt { padding-right: 0; }
   /* Pause / play and stop sit in the tile's top right corner (the right edge on compact tiles). */
   .tile .tile-corner { position: absolute; top: 8px; right: 10px; display: flex; align-items: center; gap: 8px; }
@@ -725,6 +761,7 @@ class EasyAnnounceCard extends HTMLElement {
   connectedCallback() { if (this._rendered) this._scheduleFit(); }
 
   disconnectedCallback() {
+    if (this._ro) { this._ro.disconnect(); this._ro = null; }
     if (this._throttle) clearTimeout(this._throttle);
     this._throttle = null;
   }
@@ -788,6 +825,7 @@ class EasyAnnounceCard extends HTMLElement {
         <div class="status" data-status></div>
       </ha-card>`;
     this._rendered = true;
+    if (this._ro) { this._ro.disconnect(); this._ro = null; }
     this._wire();
     this._patch();
     this._scheduleFit();
@@ -867,6 +905,7 @@ class EasyAnnounceCard extends HTMLElement {
     if (!compact) card.style.removeProperty('--ean-name-w');
     if (!fit && !compact) { this._fitPending = false; return; }
     let widest = 0;
+    let squeeze = false;
     let nameW = 0;
     let measured = false;
     for (const tile of this.shadowRoot.querySelectorAll('.tile:not(.tile-row)')) {
@@ -880,20 +919,42 @@ class EasyAnnounceCard extends HTMLElement {
       const cs = getComputedStyle(tile);
       const n = (v) => parseFloat(v) || 0;
       const chrome = n(cs.paddingLeft) + n(cs.paddingRight) + n(cs.borderLeftWidth) + n(cs.borderRightWidth);
-      const textW = Math.max(0, ...[...txt.children].map((e) => e.scrollWidth));
+      // The name in full; the state line ("Playing · song") may shorten, so it counts only up to 6em.
+      const nameEl = txt.querySelector('.name');
+      const stateEl = txt.querySelector('.state');
+      const textW = Math.max(nameEl ? nameEl.scrollWidth : 0, stateEl ? Math.min(stateEl.scrollWidth, 6 * (n(getComputedStyle(stateEl).fontSize) || 13)) : 0);
       const topNeed = (xr.left - tr.left) + textW + n(getComputedStyle(txt).paddingRight);
       nameW = Math.max(nameW, topNeed);
-      const ctl = tile.querySelector('.ctl');
-      const ctlMin = ctl ? n(getComputedStyle(ctl).minWidth) + n(getComputedStyle(ctl).paddingRight) : 0;
-      widest = Math.max(widest, tileFitWidth({ chrome, topNeed, compact, gap: n(cs.columnGap || cs.gap), ctlMin }));
+      // Columns: room for the corner buttons whether or not they show now. Stacking: only when they show.
+      const need = tileFitWidth({ chrome, topNeed, compact, gap: compact ? 12 : 0, ctlMin: controlsNeed(tile, n, true) });
+      widest = Math.max(widest, need);
+      if (compact) {
+        const now = tileFitWidth({ chrome, topNeed, compact, gap: 12, ctlMin: controlsNeed(tile, n, false) });
+        if (tile.getBoundingClientRect().width + 0.5 < now) squeeze = true;
+      }
     }
+    // A grid too narrow for name and controls side by side stacks every tile in it, so they stay aligned.
+    if (measured && compact) this.shadowRoot.querySelectorAll('.tile.compact:not(.tile-row)').forEach((tl) => tl.classList.toggle('squeeze', squeeze));
     this._fitPending = !measured;
     if (measured && fit && widest > 0) card.style.setProperty('--ean-fit-w', `${widest}px`);
     // Compact: the name column of every tile is as wide as the longest name, so the sliders line up.
     if (measured && compact && nameW > 0) card.style.setProperty('--ean-name-w', `${Math.ceil(nameW) + 1}px`);
   }
 
+  _observeSize() {
+    if (this._ro || typeof ResizeObserver === 'undefined') return;
+    let queued = false;
+    this._ro = new ResizeObserver(() => {
+      if (queued) return;
+      queued = true;
+      (window.requestAnimationFrame || setTimeout)(() => { queued = false; if (this.isConnected) this._fitTiles(); });
+    });
+    const card = this.shadowRoot.querySelector('ha-card');
+    if (card) this._ro.observe(card);
+  }
+
   _scheduleFit() {
+    this._observeSize();
     this._fitPending = true;
     const run = () => { if (this.isConnected) this._fitTiles(); };
     (window.requestAnimationFrame || setTimeout)(run);
@@ -1102,7 +1163,7 @@ class EasyAnnounceCard extends HTMLElement {
       // Artwork (style set as a property, never through HTML)
       const artEl = el.querySelector('[data-art]') || el.querySelector('[data-thumb]');
       if (artEl) {
-        const url = s.available ? artworkUrl(st) : '';
+        const url = s.available ? artworkUrl(st, !!this._c('artwork_idle')) : '';
         if (artEl._url !== url) {
           artEl._url = url;
           artEl.style.backgroundImage = url ? cssUrl(url) : '';
@@ -1729,8 +1790,9 @@ class EasyAnnounceCardEditor extends HTMLElement {
         ...(this._c('show_stop') ? [this._iconStyle('stop_icon')] : []),
         ...(this._c('show_mute') ? [this._iconStyle('mute_icon')] : []),
         `<div class="eane-group">Artwork</div>
-        <p class="eane-hint">The album art or poster of what a speaker is playing, while it plays or is paused.</p>
+        <p class="eane-hint">The picture Alexa gives each speaker: the album art or poster of what it's playing.</p>
         ${this._select('artwork', 'Show it', [['background', 'As the tile background'], ['thumbnail', 'In place of the speaker icon'], ['off', 'Off']])}
+        ${this._c('artwork') !== 'off' ? this._check('artwork_idle', 'Keep it after playback stops', '(while Alexa still has a picture)') : ''}
         ${this._c('artwork') === 'background' ? this._slider('artwork_opacity', 'Strength', 5, 100) : ''}`]],
       ['look-everywhere', 'Everywhere tile', [
         `<p class="eane-hint">Alexa's Everywhere speaker${this._hass && !discoverSpeakers(this._hass, this._config).some((s) => s.everywhere)
@@ -1851,7 +1913,7 @@ EasyAnnounceCard._test = {
   BUILD_NUMBER, VERSION, CARD_CSS, EDITOR_CSS, DEFAULTS, COLOR_DEFS, VIEWS,
   normalizeConfig, discoverSpeakers, cleanName, globRe, excluded, readPresets, planOptions, isPlaceholder,
   buildCall, setupProblem, rootStyleVars, colorMode, speakerState, viewKey,
-  pauseAction, stopVisible, artworkUrl, cssUrl, TEXT_ITEMS, ICON_ITEMS, FRAME_COLORS, EW_KEYS, everywhereStyleVars, tileFitWidth, usesNameFit, isThisDevice, effectiveOrientation, gridColumns, tileControls, restoreDelayMs, restoreLevels, scheduleRestore, RESTORES, FEAT,
+  pauseAction, stopVisible, controlsNeed, artworkUrl, cssUrl, TEXT_ITEMS, ICON_ITEMS, FRAME_COLORS, EW_KEYS, everywhereStyleVars, tileFitWidth, usesNameFit, isThisDevice, effectiveOrientation, gridColumns, tileControls, restoreDelayMs, restoreLevels, scheduleRestore, RESTORES, FEAT,
 };
 
 if (!customElements.get(CARD_TAG)) customElements.define(CARD_TAG, EasyAnnounceCard);
